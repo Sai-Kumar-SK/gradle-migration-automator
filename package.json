@@ -1,0 +1,60 @@
+{
+  "name": "gradle-migration-automator",
+  "displayName": "Gradle Migration Automator",
+  "publisher": "sample-publisher",
+  "version": "0.1.0",
+  "description": "Automates migration of Gradle projects from Nexus OSS to JFrog Artifactory leveraging Git, Gradle parsing, and transformation planning.",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onCommand:gradle-migration-automator.migrate"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "gradle-migration-automator.migrate",
+        "title": "Migrate Gradle Project to Artifactory"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "gitAgent",
+        "name": "gitAgent",
+        "description": "Handles repository operations like clone, checkout, branch creation, commit, and push.",
+        "systemMessage": "You are gitAgent, a repository operations specialist. You handle cloning a repo, checking out base branches, creating new branches, committing modified files, and pushing to remote origin. Never modify build logic directly. Output structured JSON like: { 'repo': '<repo-name>', 'branch': '<branch-name>', 'workspacePath': '<abs-path>', 'status': 'ready' }",
+        "isSticky": true
+      },
+      {
+        "id": "gradleParser",
+        "name": "gradleParser",
+        "description": "Parses Gradle build files (Groovy and Kotlin DSL) and outputs structured metadata.",
+        "systemMessage": "You are gradleParser, a Gradle AST parser. Parse build.gradle(.kts) and settings.gradle files to extract plugin IDs, repository definitions, publishing configs, and detect Nexus references. Output normalized JSON: { 'modules': [{ 'path': 'submodule', 'dsl': 'groovy', 'plugins': [...], 'repositories': [...], 'publishing': {...}, 'nexusReferences': true|false }] }",
+        "isSticky": true
+      },
+      {
+        "id": "transformationPlanner",
+        "name": "transformationPlanner",
+        "description": "Plans and generates patch diffs to migrate Gradle projects from Nexus OSS to JFrog Artifactory.",
+        "systemMessage": "You are transformationPlanner, a migration strategist. Based on gradleParser output, generate patch diffs replacing Nexus configurations with JFrog Artifactory equivalents. Do not apply changes directly; output a patch list in unified-diff format with risk levels (low|medium|high) and summary lines. Always preserve syntax style and indentation.",
+        "isSticky": true
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -p . -w"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.130",
+    "@types/vscode": "^1.105.0",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [],
+  "author": ""
+}
