@@ -22,6 +22,83 @@ export async function activate(context: vscode.ExtensionContext) {
   const channel = vscode.window.createOutputChannel('Gradle Migration Automator');
   const telemetry = new Telemetry(channel);
 
+  // Register chat participants if API is available
+  const chat: any = (vscode as any).chat;
+  if (chat && typeof chat.createChatParticipant === 'function') {
+    const gitAgentParticipant = chat.createChatParticipant('gitAgent', async (request: any) => {
+      channel.show(true);
+      telemetry.info('chat_gitAgent_invoked');
+      const text = String(request?.prompt ?? request?.message ?? '');
+      try {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+        const metaDir = path.join(workspaceRoot, '.copilot', 'meta');
+        fs.mkdirSync(metaDir, { recursive: true });
+        const agent = new GitAgent(channel, metaDir);
+        const commitMsgMatch = text.match(/commitMessage:\s*\"([^\"]+)\"/i);
+        if (/apply|commit|push/i.test(text)) {
+          const patchPath = path.join(metaDir, 'patches.diff');
+          const commitMessage = commitMsgMatch?.[1] ?? 'chore: migrate Nexus to JFrog Artifactory';
+          await agent.applyCommitAndPush({ patchPath, commitMessage });
+        } else {
+          const gitUrlMatch = text.match(/gitUrl:\s*(\S+)/i);
+          const baseBranchMatch = text.match(/baseBranch:\s*(\S+)/i);
+          if (gitUrlMatch && baseBranchMatch) {
+            await agent.cloneAndPrepare({ gitUrl: gitUrlMatch[1], baseBranch: baseBranchMatch[1] });
+          } else {
+            channel.appendLine('[gitAgent] Provide gitUrl and baseBranch or ask to commit/push.');
+          }
+        }
+      } catch (err) {
+        telemetry.error('chat_gitAgent_error', err);
+      }
+    }, { name: 'gitAgent', description: 'Repository operations (clone, branch, commit, push).' });
+    context.subscriptions.push(gitAgentParticipant);
+
+    const gradleParserParticipant = chat.createChatParticipant('gradleParser', async (_request: any) => {
+      channel.show(true);
+      telemetry.info('chat_gradleParser_invoked');
+      try {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+        const metaDir = path.join(workspaceRoot, '.copilot', 'meta');
+        fs.mkdirSync(metaDir, { recursive: true });
+        const gitMetaPath = path.join(metaDir, 'gitAgent.json');
+        let workspacePath = workspaceRoot;
+        try { workspacePath = JSON.parse(fs.readFileSync(gitMetaPath, 'utf-8')).workspacePath || workspacePath; } catch {}
+        const parser = new GradleParser(channel, metaDir);
+        const output = await parser.parseProject(workspacePath);
+        fs.writeFileSync(path.join(metaDir, 'gradle-ast.json'), JSON.stringify(output, null, 2));
+      } catch (err) {
+        telemetry.error('chat_gradleParser_error', err);
+      }
+    }, { name: 'gradleParser', description: 'Parse Gradle build files to JSON AST.' });
+    context.subscriptions.push(gradleParserParticipant);
+
+    const plannerParticipant = chat.createChatParticipant('transformationPlanner', async (_request: any) => {
+      channel.show(true);
+      telemetry.info('chat_transformationPlanner_invoked');
+      try {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+        const metaDir = path.join(workspaceRoot, '.copilot', 'meta');
+        fs.mkdirSync(metaDir, { recursive: true });
+        const gitMetaPath = path.join(metaDir, 'gitAgent.json');
+        let workspacePath = workspaceRoot;
+        try { workspacePath = JSON.parse(fs.readFileSync(gitMetaPath, 'utf-8')).workspacePath || workspacePath; } catch {}
+        const astPath = path.join(metaDir, 'gradle-ast.json');
+        let ast: any = undefined;
+        try { ast = JSON.parse(fs.readFileSync(astPath, 'utf-8')); } catch {}
+        const planner = new TransformationPlanner(channel, metaDir);
+        const plan = await planner.generatePatches(ast, workspacePath);
+        fs.writeFileSync(path.join(metaDir, 'patches.diff'), plan.patchText);
+        fs.writeFileSync(path.join(metaDir, 'planner.json'), JSON.stringify({ filesChanged: plan.filesChanged, riskSummary: plan.riskSummary }, null, 2));
+      } catch (err) {
+        telemetry.error('chat_transformationPlanner_error', err);
+      }
+    }, { name: 'transformationPlanner', description: 'Generate Artifactory migration patches and risk summary.' });
+    context.subscriptions.push(plannerParticipant);
+  } else {
+    channel.appendLine('[info] Chat Participants API not available; using command workflow.');
+  }
+
   const migrateCmd = vscode.commands.registerCommand('gradle-migration-automator.migrate', async () => {
     try {
       channel.show(true);

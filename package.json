@@ -13,7 +13,10 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
-    "onCommand:gradle-migration-automator.migrate"
+    "onCommand:gradle-migration-automator.migrate",
+    "onChatParticipant:gitAgent",
+    "onChatParticipant:gradleParser",
+    "onChatParticipant:transformationPlanner"
   ],
   "contributes": {
     "commands": [
