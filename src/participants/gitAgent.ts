@@ -47,6 +47,21 @@ export class GitAgent {
     res = await run(`git checkout -b ${migrationBranch}`, workspacePath);
     if (res.code !== 0) throw new Error(`git branch create failed: ${res.stderr}`);
 
+    // Ensure .copilot/ is excluded from commits in this repo
+    try {
+      const gitExcludePath = path.join(workspacePath, '.git', 'info', 'exclude');
+      fs.mkdirSync(path.dirname(gitExcludePath), { recursive: true });
+      const excludeLine = '.copilot/\n';
+      let existing = '';
+      try { existing = fs.readFileSync(gitExcludePath, 'utf-8'); } catch {}
+      if (!existing.includes('.copilot/')) {
+        fs.appendFileSync(gitExcludePath, excludeLine);
+        this.channel.appendLine('[gitAgent] Added .copilot/ to .git/info/exclude');
+      }
+    } catch (e) {
+      this.channel.appendLine(`[gitAgent] Warning: could not update .git/info/exclude: ${String(e)}`);
+    }
+
     const output = { repo: repoName, branch: migrationBranch, workspacePath, status: 'ready' as const };
     fs.writeFileSync(path.join(this.metaDir, 'gitAgent.json'), JSON.stringify(output, null, 2));
     return output;
@@ -64,9 +79,13 @@ export class GitAgent {
     let res = await run(`git apply "${params.patchPath}"`, cwd);
     if (res.code !== 0) throw new Error(`git apply failed: ${res.stderr}`);
 
-    // Commit
+    // Stage changes, excluding .copilot/*
     res = await run(`git add -A`, cwd);
     if (res.code !== 0) throw new Error(`git add failed: ${res.stderr}`);
+    // Defensive unstage in case .git/info/exclude was not respected
+    await run(`git reset HEAD -- .copilot`, cwd);
+
+    // Commit
     res = await run(`git commit -m "${params.commitMessage}"`, cwd);
     if (res.code !== 0) throw new Error(`git commit failed: ${res.stderr}`);
 

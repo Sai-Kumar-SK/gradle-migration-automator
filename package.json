@@ -13,6 +13,7 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:gradle-migration-automator.migrate",
     "onChatParticipant:gitAgent",
     "onChatParticipant:gradleParser",

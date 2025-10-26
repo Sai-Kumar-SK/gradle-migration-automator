@@ -108,7 +108,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const gitUrl = await vscode.window.showInputBox({ prompt: 'Git URL of the repository', ignoreFocusOut: true });
       if (!gitUrl) { throw new Error('Git URL is required'); }
 
-      const baseBranch = await vscode.window.showInputBox({ prompt: 'Base branch name (e.g., main)', ignoreFocusOut: true, value: 'main' });
+      const baseBranch = await vscode.window.showInputBox({ prompt: 'Base branch name (e.g., master)', ignoreFocusOut: true, value: 'master' });
       if (!baseBranch) { throw new Error('Base branch is required'); }
 
       const commitMessage = await vscode.window.showInputBox({ prompt: 'Commit message for migration changes', ignoreFocusOut: true, value: 'chore: migrate Nexus to JFrog Artifactory' });
