@@ -2,6 +2,14 @@
 
 This file provides prompts for comprehensive Gradle migration using our chat participants. The migration now includes buildSrc scaffolding, libs.versions.toml generation, and modernization to Gradle version catalogs.
 
+```
+1. @transformationPlanner provideWorkflowInstructions
+2. @gitAgent clone https://github.com/user/repo.git
+3. @gradleParser analyze
+4. @transformationPlanner executeStepByStepMigration
+5. @gitAgent commit -m "Phase 1: Gradle migration - buildSrc + libs.versions.toml"
+```
+
 ## Default Migration Prompt (Copy/Paste)
 Use this single prompt in Copilot Agent Mode. It should automatically chain participants: `gitAgent → gradleParser → transformationPlanner → gitAgent(commit)`.
 
