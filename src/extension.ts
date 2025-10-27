@@ -87,9 +87,8 @@ export async function activate(context: vscode.ExtensionContext) {
         let ast: any = undefined;
         try { ast = JSON.parse(fs.readFileSync(astPath, 'utf-8')); } catch {}
         const planner = new TransformationPlanner(channel, metaDir);
-        const plan = await planner.generatePatches(ast, workspacePath);
-        fs.writeFileSync(path.join(metaDir, 'patches.diff'), plan.patchText);
-        fs.writeFileSync(path.join(metaDir, 'planner.json'), JSON.stringify({ filesChanged: plan.filesChanged, riskSummary: plan.riskSummary }, null, 2));
+        const result = await planner.executeStepByStepMigration(ast, workspacePath);
+        fs.writeFileSync(path.join(metaDir, 'planner.json'), JSON.stringify({ filesChanged: result.filesChanged, riskSummary: result.riskSummary }, null, 2));
       } catch (err) {
         telemetry.error('chat_transformationPlanner_error', err);
       }
