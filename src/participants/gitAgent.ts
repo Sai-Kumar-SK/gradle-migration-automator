@@ -26,9 +26,18 @@ export class GitAgent {
     const repoName = path.basename(gitUrl.replace(/\.git$/, ''));
     const workspaceRoot = path.resolve(path.join(this.metaDir, '..', '..'));
     
+    // Debug logging
+    this.channel.appendLine(`[gitAgent] Debug: metaDir = ${this.metaDir}`);
+    this.channel.appendLine(`[gitAgent] Debug: workspaceRoot = ${workspaceRoot}`);
+    this.channel.appendLine(`[gitAgent] Debug: repoName = ${repoName}`);
+    
     // Check if workspace is empty or contains git repo
     const isGitRepo = fs.existsSync(path.join(workspaceRoot, '.git'));
-    const isEmpty = fs.readdirSync(workspaceRoot).filter(f => !f.startsWith('.')).length === 0;
+    const allFiles = fs.readdirSync(workspaceRoot);
+    const isEmpty = allFiles.length === 0;
+    
+    this.channel.appendLine(`[gitAgent] Debug: isGitRepo = ${isGitRepo}, isEmpty = ${isEmpty}`);
+    this.channel.appendLine(`[gitAgent] Debug: files in workspace = ${JSON.stringify(allFiles)}`);
 
     let workspacePath: string;
 
@@ -48,7 +57,8 @@ export class GitAgent {
       if (res.code !== 0) this.channel.appendLine(`[gitAgent] Warning: git fetch failed: ${res.stderr}`);
     } else {
       // Clone into subdirectory if workspace is not empty and not a git repo
-      workspacePath = path.join(workspaceRoot, 'workspace', repoName);
+      const workspaceDir = path.join(workspaceRoot, 'workspace');
+      workspacePath = path.join(workspaceDir, repoName);
       this.channel.appendLine(`[gitAgent] Workspace not empty, cloning ${gitUrl} -> ${workspacePath}`);
       
       // Remove existing directory if it exists
@@ -58,9 +68,10 @@ export class GitAgent {
       }
       
       // Ensure parent directory exists
-      fs.mkdirSync(path.dirname(workspacePath), { recursive: true });
+      fs.mkdirSync(workspaceDir, { recursive: true });
       
-      let res = await run(`git clone ${gitUrl} "${workspacePath}"`, workspaceRoot);
+      // Clone into the workspace directory with the repo name as target folder
+      let res = await run(`git clone ${gitUrl} ${repoName}`, workspaceDir);
       if (res.code !== 0) throw new Error(`git clone failed: ${res.stderr}`);
     }
 
