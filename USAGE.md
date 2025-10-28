@@ -12,6 +12,7 @@ The extension leaves Gradle task execution (build/clean/publish) to the VS Code 
 - GitHub Copilot extension (for AI-enhanced generation)
 - Network access to your Git remote
 - An Artifactory repository and URL to target
+- **ops_server reference project**: Must be available in `.copilot/meta/ops_server/` folder for migration context
 
 ## AI Model Selection
 

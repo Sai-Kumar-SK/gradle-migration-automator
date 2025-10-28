@@ -26,18 +26,10 @@ export class GitAgent {
     const repoName = path.basename(gitUrl.replace(/\.git$/, ''));
     const workspaceRoot = path.resolve(path.join(this.metaDir, '..', '..'));
     
-    // Debug logging
-    this.channel.appendLine(`[gitAgent] Debug: metaDir = ${this.metaDir}`);
-    this.channel.appendLine(`[gitAgent] Debug: workspaceRoot = ${workspaceRoot}`);
-    this.channel.appendLine(`[gitAgent] Debug: repoName = ${repoName}`);
-    
     // Check if workspace is empty or contains git repo
     const isGitRepo = fs.existsSync(path.join(workspaceRoot, '.git'));
     const allFiles = fs.readdirSync(workspaceRoot);
     const isEmpty = allFiles.length === 0;
-    
-    this.channel.appendLine(`[gitAgent] Debug: isGitRepo = ${isGitRepo}, isEmpty = ${isEmpty}`);
-    this.channel.appendLine(`[gitAgent] Debug: files in workspace = ${JSON.stringify(allFiles)}`);
 
     let workspacePath: string;
 

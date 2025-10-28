@@ -17,6 +17,7 @@ Automates migration of Gradle projects from Nexus OSS to JFrog Artifactory lever
 - Git installed and available in PATH
 - VS Code 1.93+ (Chat Participants API)
 - GitHub Copilot extension (for AI-enhanced generation)
+- **ops_server reference project**: Must be available in `.copilot/meta/ops_server/` folder for migration context
 
 ## Workspace Handling
 The extension intelligently handles different workspace scenarios:

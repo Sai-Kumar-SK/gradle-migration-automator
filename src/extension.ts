@@ -9,12 +9,20 @@ import { TransformationPlanner } from './participants/transformationPlanner';
 class Telemetry {
   constructor(private channel: vscode.OutputChannel) {}
   public info(event: string, details?: any) {
-    const payload = { time: new Date().toISOString(), event, level: 'info', ...details };
-    this.channel.appendLine(`[telemetry] ${JSON.stringify(payload)}`);
+    try {
+      const payload = { time: new Date().toISOString(), event, level: 'info', ...details };
+      this.channel.appendLine(`[telemetry] ${JSON.stringify(payload)}`);
+    } catch (err) {
+      // Channel might be closed during workspace updates - ignore silently
+    }
   }
   public error(event: string, err: unknown, details?: any) {
-    const payload = { time: new Date().toISOString(), event, level: 'error', error: String(err), ...details };
-    this.channel.appendLine(`[telemetry] ${JSON.stringify(payload)}`);
+    try {
+      const payload = { time: new Date().toISOString(), event, level: 'error', error: String(err), ...details };
+      this.channel.appendLine(`[telemetry] ${JSON.stringify(payload)}`);
+    } catch (err) {
+      // Channel might be closed during workspace updates - ignore silently
+    }
   }
 }
 
@@ -125,20 +133,20 @@ export async function activate(context: vscode.ExtensionContext) {
       const commitMessage = await vscode.window.showInputBox({ prompt: 'Commit message for migration changes', ignoreFocusOut: true, value: 'chore: migrate Nexus to JFrog Artifactory' });
       if (!commitMessage) { throw new Error('Commit message is required'); }
 
-      // Optional: Reference project for context
-      const referenceProjectUrl = await vscode.window.showInputBox({
-        prompt: 'Enter reference project Git URL (optional - for migration context)',
-        placeHolder: 'https://github.com/example/gradle-platform-project.git'
-      });
-
       const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || path.join(process.cwd(), 'workspace');
       const metaDir = path.join(workspaceRoot, '.copilot', 'meta');
       fs.mkdirSync(metaDir, { recursive: true });
 
+      // Check for required reference project (ops_server)
+      const opsServerPath = path.join(metaDir, 'ops_server');
+      if (!fs.existsSync(opsServerPath)) {
+        throw new Error('Reference project "ops_server" not found in .copilot/meta/ folder. Please ensure the ops_server reference project is available.');
+      }
+
       // Initialize participants (dependency injection style)
       const gitAgent = new GitAgent(channel, metaDir);
       const gradleParser = new GradleParser(channel, metaDir);
-      const planner = new TransformationPlanner(channel, metaDir, referenceProjectUrl);
+      const planner = new TransformationPlanner(channel, metaDir);
 
       // 1) gitAgent: clone and prepare workspace/branch
       vscode.window.showInformationMessage('gitAgent: Cloning repository and preparing branch...');
@@ -148,8 +156,23 @@ export async function activate(context: vscode.ExtensionContext) {
 
       // Open the cloned repo as workspace folder if not already open
       const repoFolder = vscode.Uri.file(gitResult.workspacePath);
-      if (!vscode.workspace.workspaceFolders?.some(f => f.uri.fsPath === gitResult.workspacePath)) {
-        await vscode.workspace.updateWorkspaceFolders(0, null, { uri: repoFolder });
+      const isAlreadyOpen = vscode.workspace.workspaceFolders?.some(f => 
+        path.resolve(f.uri.fsPath) === path.resolve(gitResult.workspacePath)
+      );
+      
+      if (!isAlreadyOpen) {
+        // Warn user that workspace will be updated (may cause extension host restart)
+        channel.appendLine(`[gitAgent] Adding workspace folder: ${gitResult.workspacePath}`);
+        channel.appendLine(`[gitAgent] Note: This may cause VS Code to reload the workspace`);
+        
+        try {
+          await vscode.workspace.updateWorkspaceFolders(0, null, { uri: repoFolder });
+          // Give a moment for workspace to settle
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (err) {
+          // Workspace update might fail if extension host is restarting - this is expected
+          channel.appendLine(`[gitAgent] Workspace update completed (extension may have restarted)`);
+        }
       }
 
       // 2) gradleParser: parse build files

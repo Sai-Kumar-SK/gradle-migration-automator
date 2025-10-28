@@ -367,16 +367,16 @@ export class TransformationPlanner {
     console.log(instructions.join('\n'));
   }
 
-  private async getOpsServerReference(): Promise<string | null> {
-    // First check for ops_server in .copilot/meta/
+  private async getOpsServerReference(): Promise<string> {
+    // Check for ops_server in .copilot/meta/
     const opsServerDir = path.join(this.metaDir, 'ops_server');
     if (fs.existsSync(opsServerDir)) {
       this.channel.appendLine(`[transformationPlanner] Found ops_server reference project at: ${opsServerDir}`);
       return opsServerDir;
     }
     
-    // Fallback to external reference project if provided
-    return await this.cloneReferenceProject();
+    // ops_server is required - throw error if not found
+    throw new Error('Reference project "ops_server" not found in .copilot/meta/ folder. Please ensure the ops_server reference project is available.');
   }
 
   private async cloneReferenceProject(): Promise<string | null> {
@@ -1290,16 +1290,12 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 
     this.channel.appendLine(`[transformationPlanner] Starting step-by-step Gradle migration for: ${projectRoot}`)
 
-    // Step 0: Analyze ops_server or reference project for context
+    // Step 0: Analyze ops_server reference project for context
     let referenceContext: { libsVersions?: any; buildPatterns?: string[] } = {};
-    this.channel.appendLine(`[transformationPlanner] Step 0: Analyzing reference project for context`)
+    this.channel.appendLine(`[transformationPlanner] Step 0: Analyzing ops_server reference project for context`)
     const referenceDir = await this.getOpsServerReference();
-    if (referenceDir) {
-      referenceContext = await this.analyzeReferenceProject(referenceDir);
-      this.channel.appendLine(`[transformationPlanner] ✓ Reference project analysis complete`)
-    } else {
-      this.channel.appendLine(`[transformationPlanner] ⚠️ No reference project found (ops_server or external)`)
-    }
+    referenceContext = await this.analyzeReferenceProject(referenceDir);
+    this.channel.appendLine(`[transformationPlanner] ✓ Reference project analysis complete`)
 
     // Step 1: Update settings.gradle - keep only rootProject.name and include lines
     this.channel.appendLine(`[transformationPlanner] Step 1: Updating settings.gradle`)
