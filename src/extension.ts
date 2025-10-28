@@ -73,20 +73,32 @@ export async function activate(context: vscode.ExtensionContext) {
     }, { name: 'gradleParser', description: 'Parse Gradle build files to JSON AST.' });
     context.subscriptions.push(gradleParserParticipant);
 
-    const plannerParticipant = chat.createChatParticipant('transformationPlanner', async (_request: any) => {
+    const plannerParticipant = chat.createChatParticipant('transformationPlanner', async (request: any, context: any, stream: any) => {
       channel.show(true);
       telemetry.info('chat_transformationPlanner_invoked');
       try {
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
         const metaDir = path.join(workspaceRoot, '.copilot', 'meta');
         fs.mkdirSync(metaDir, { recursive: true });
+        
+        const planner = new TransformationPlanner(channel, metaDir);
+        
+        // Handle setPreferredModel command
+        const prompt = request.prompt?.trim() || '';
+        if (prompt.startsWith('setPreferredModel ')) {
+          const modelId = prompt.replace('setPreferredModel ', '').trim();
+          planner.setPreferredModel(modelId);
+          stream.markdown(`✅ **Preferred Copilot model set to:** \`${modelId}\`\n\nThis model will be used for AI-enhanced Gradle migration generation. Available models:\n- \`gpt-4o\` (GPT-4.1) - Recommended\n- \`gpt-4\` (GPT-4.0)\n\nTo reset to auto-selection, use: \`@transformationPlanner setPreferredModel auto\``);
+          return;
+        }
+        
+        // Handle regular migration workflow
         const gitMetaPath = path.join(metaDir, 'gitAgent.json');
         let workspacePath = workspaceRoot;
         try { workspacePath = JSON.parse(fs.readFileSync(gitMetaPath, 'utf-8')).workspacePath || workspacePath; } catch {}
         const astPath = path.join(metaDir, 'gradle-ast.json');
         let ast: any = undefined;
         try { ast = JSON.parse(fs.readFileSync(astPath, 'utf-8')); } catch {}
-        const planner = new TransformationPlanner(channel, metaDir);
         const result = await planner.executeStepByStepMigration(ast, workspacePath);
         fs.writeFileSync(path.join(metaDir, 'planner.json'), JSON.stringify({ filesChanged: result.filesChanged, riskSummary: result.riskSummary }, null, 2));
       } catch (err) {

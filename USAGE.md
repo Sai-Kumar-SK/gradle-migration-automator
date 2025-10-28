@@ -9,8 +9,33 @@ The extension leaves Gradle task execution (build/clean/publish) to the VS Code 
 ## Prerequisites
 - Git installed and available in `PATH`
 - VS Code 1.93+ with Copilot Chat
+- GitHub Copilot extension (for AI-enhanced generation)
 - Network access to your Git remote
 - An Artifactory repository and URL to target
+
+## AI Model Selection
+
+The extension automatically uses the best available Copilot model, with preference for **GPT-4.1** (gpt-4o) over GPT-4.0 (gpt-4).
+
+**To check which model is being used:**
+1. Open the Output Channel (`View > Output`)
+2. Select "Gradle Migration Automator" from the dropdown
+3. Look for model selection logs:
+   ```
+   [transformationPlanner] ✓ Auto-selected: Copilot (GPT-4o) (GPT-4.1)
+   ```
+
+**To manually set your preferred model:**
+Use the `@transformationPlanner` participant in Copilot Chat:
+```
+@transformationPlanner setPreferredModel gpt-4o
+```
+or
+```
+@transformationPlanner setPreferredModel gpt-4
+```
+
+This ensures you're using GPT-4.1 for the most accurate Gradle migration analysis and code generation.
 
 ## Quick Start (Command Palette)
 1. Open VS Code.

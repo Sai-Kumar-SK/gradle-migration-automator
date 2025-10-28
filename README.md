@@ -16,6 +16,33 @@ Automates migration of Gradle projects from Nexus OSS to JFrog Artifactory lever
 ## Requirements
 - Git installed and available in PATH
 - VS Code 1.93+ (Chat Participants API)
+- GitHub Copilot extension (for AI-enhanced generation)
+
+## AI Model Configuration
+
+The extension automatically detects and uses the best available Copilot model:
+
+**Model Priority (Auto-Selection):**
+1. **GPT-4.1** (gpt-4o) - Preferred for enhanced accuracy
+2. **GPT-4.0** (gpt-4) - Fallback option
+3. Other available models
+
+**Available Models:**
+When the extension runs, it will log available models in the Output Channel:
+```
+[transformationPlanner] Available models:
+  1. Copilot (GPT-4o) (GPT-4.1) - copilot-gpt-4o
+  2. Copilot (GPT-4) (GPT-4.0) - copilot-gpt-4
+```
+
+**Manual Model Selection:**
+You can explicitly set your preferred model by calling:
+```typescript
+// In your extension code or via Copilot Chat
+transformationPlanner.setPreferredModel('gpt-4o'); // For GPT-4.1
+// or
+transformationPlanner.setPreferredModel('gpt-4');  // For GPT-4.0
+```
 
 ## How It Works
 
