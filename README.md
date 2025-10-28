@@ -18,6 +18,15 @@ Automates migration of Gradle projects from Nexus OSS to JFrog Artifactory lever
 - VS Code 1.93+ (Chat Participants API)
 - GitHub Copilot extension (for AI-enhanced generation)
 
+## Workspace Handling
+The extension intelligently handles different workspace scenarios:
+
+- **Empty workspace**: Clones directly into the current directory
+- **Existing git repository**: Uses the current repository and creates a migration branch
+- **Non-empty workspace**: Automatically clones into `workspace/<repo-name>/` subdirectory to avoid conflicts
+
+This means you can run the migration from any VS Code workspace without worrying about directory conflicts.
+
 ## AI Model Configuration
 
 The extension automatically detects and uses the best available Copilot model:
