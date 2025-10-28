@@ -33,7 +33,8 @@ export async function activate(context: vscode.ExtensionContext) {
   // Register chat participants if API is available
   const chat: any = (vscode as any).chat;
   if (chat && typeof chat.createChatParticipant === 'function') {
-    const gitAgentParticipant = chat.createChatParticipant('gitAgent', async (request: any) => {
+    try {
+      const gitAgentParticipant = chat.createChatParticipant('gitAgent', async (request: any) => {
       channel.show(true);
       telemetry.info('chat_gitAgent_invoked');
       const text = String(request?.prompt ?? request?.message ?? '');
@@ -114,12 +115,80 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }, { name: 'transformationPlanner', description: 'Generate Artifactory migration patches and risk summary.' });
     context.subscriptions.push(plannerParticipant);
+    
+    } catch (error) {
+      channel.appendLine(`[error] Failed to register chat participants: ${error}`);
+      telemetry.error('chat_participant_registration_error', error);
+    }
   } else {
     channel.appendLine('[info] Chat Participants API not available; using command workflow.');
   }
 
   const migrateCmd = vscode.commands.registerCommand('gradle-migration-automator.migrate', async () => {
     try {
+      // Always use the original workspace root for .copilot/meta, not the cloned repo
+      const originalWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || path.join(process.cwd(), 'workspace');
+      
+      // Check if we're already in a cloned repo workspace (after restart)
+      let workspaceRoot = originalWorkspaceRoot;
+      let metaDir = path.join(originalWorkspaceRoot, '.copilot', 'meta');
+      
+      // If the current workspace looks like a cloned repo, find the parent migration folder
+      if (originalWorkspaceRoot.includes('\\workspace\\') || originalWorkspaceRoot.includes('/workspace/')) {
+        // Extract the migration root (parent of workspace folder)
+        const migrationRoot = originalWorkspaceRoot.split(path.sep + 'workspace' + path.sep)[0];
+        metaDir = path.join(migrationRoot, '.copilot', 'meta');
+        channel.appendLine(`[MIGRATION] Detected cloned repo workspace, using migration root: ${migrationRoot}`);
+      }
+      
+      const stateFile = path.join(metaDir, 'migration-state.json');
+      
+      // Check if we're resuming from an extension host restart
+      channel.appendLine(`[MIGRATION] Original workspace root: ${originalWorkspaceRoot}`);
+      channel.appendLine(`[MIGRATION] Meta directory: ${metaDir}`);
+      channel.appendLine(`[MIGRATION] Checking for migration state file: ${stateFile}`);
+      channel.appendLine(`[MIGRATION] State file exists: ${fs.existsSync(stateFile)}`);
+      
+      if (fs.existsSync(stateFile)) {
+        try {
+          const stateContent = fs.readFileSync(stateFile, 'utf-8');
+          channel.appendLine(`[MIGRATION] State file content length: ${stateContent.length} chars`);
+          
+          const migrationState = JSON.parse(stateContent);
+          const timeDiff = Date.now() - migrationState.timestamp;
+          
+          channel.appendLine(`[MIGRATION] State timestamp: ${new Date(migrationState.timestamp)}`);
+          channel.appendLine(`[MIGRATION] Time difference: ${Math.round(timeDiff/1000)} seconds`);
+          channel.appendLine(`[MIGRATION] State step: ${migrationState.step}`);
+          
+          // If state file is recent (less than 5 minutes), we likely restarted
+          if (timeDiff < 5 * 60 * 1000) {
+            channel.appendLine(`[MIGRATION] DETECTED RESTART: Found recent migration state from ${new Date(migrationState.timestamp)}`);
+            channel.appendLine(`[MIGRATION] Resuming migration from step: ${migrationState.step}`);
+            
+            // Resume migration from where we left off
+            if (migrationState.step === 'workspace_updated') {
+              channel.appendLine(`[MIGRATION] Resuming after workspace update...`);
+              channel.appendLine(`[MIGRATION] Workspace path: ${migrationState.workspacePath}`);
+              channel.appendLine(`[MIGRATION] Meta dir: ${migrationState.metaDir}`);
+              // Continue with step 2 (gradleParser)
+              await resumeMigrationFromStep2(migrationState, channel, telemetry);
+              return;
+            } else {
+              channel.appendLine(`[MIGRATION] Unknown step: ${migrationState.step} - starting fresh`);
+            }
+          } else {
+            channel.appendLine(`[MIGRATION] Found old migration state (${Math.round(timeDiff/1000/60)} minutes old) - starting fresh`);
+            fs.unlinkSync(stateFile);
+          }
+        } catch (err) {
+          channel.appendLine(`[MIGRATION] Error reading migration state: ${err} - starting fresh`);
+          try { fs.unlinkSync(stateFile); } catch {}
+        }
+      } else {
+        channel.appendLine(`[MIGRATION] No migration state file found - starting fresh migration`);
+      }
+      
       channel.show(true);
       vscode.window.showInformationMessage('Gradle Migration Automator: Starting migration workflow...');
       telemetry.info('workflow_start');
@@ -133,8 +202,12 @@ export async function activate(context: vscode.ExtensionContext) {
       const commitMessage = await vscode.window.showInputBox({ prompt: 'Commit message for migration changes', ignoreFocusOut: true, value: 'chore: migrate Nexus to JFrog Artifactory' });
       if (!commitMessage) { throw new Error('Commit message is required'); }
 
-      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || path.join(process.cwd(), 'workspace');
-      const metaDir = path.join(workspaceRoot, '.copilot', 'meta');
+      // For fresh migration, use the original workspace root for meta directory
+      if (!originalWorkspaceRoot.includes('\\workspace\\') && !originalWorkspaceRoot.includes('/workspace/')) {
+        workspaceRoot = originalWorkspaceRoot;
+        metaDir = path.join(workspaceRoot, '.copilot', 'meta');
+      }
+      // If we're already in a cloned repo, metaDir was set correctly above
       fs.mkdirSync(metaDir, { recursive: true });
 
       // Check for required reference project (ops_server)
@@ -149,52 +222,88 @@ export async function activate(context: vscode.ExtensionContext) {
       const planner = new TransformationPlanner(channel, metaDir);
 
       // 1) gitAgent: clone and prepare workspace/branch
+      channel.appendLine('[MIGRATION] Step 1: Starting gitAgent clone and prepare...');
       vscode.window.showInformationMessage('gitAgent: Cloning repository and preparing branch...');
       telemetry.info('gitAgent_clone_start', { gitUrl, baseBranch });
+      
       const gitResult = await gitAgent.cloneAndPrepare({ gitUrl, baseBranch });
+      channel.appendLine(`[MIGRATION] Step 1 completed: gitAgent.json written, workspacePath: ${gitResult.workspacePath}`);
       telemetry.info('gitAgent_clone_done', gitResult);
 
       // Open the cloned repo as workspace folder if not already open
+      channel.appendLine('[MIGRATION] Step 1.5: Checking workspace folder status...');
       const repoFolder = vscode.Uri.file(gitResult.workspacePath);
       const isAlreadyOpen = vscode.workspace.workspaceFolders?.some(f => 
         path.resolve(f.uri.fsPath) === path.resolve(gitResult.workspacePath)
       );
       
+      channel.appendLine(`[MIGRATION] Workspace already open: ${isAlreadyOpen}`);
+      
       if (!isAlreadyOpen) {
         // Warn user that workspace will be updated (may cause extension host restart)
-        channel.appendLine(`[gitAgent] Adding workspace folder: ${gitResult.workspacePath}`);
-        channel.appendLine(`[gitAgent] Note: This may cause VS Code to reload the workspace`);
+        channel.appendLine(`[MIGRATION] CRITICAL: About to update workspace folders - this WILL cause extension host restart`);
+        channel.appendLine(`[MIGRATION] Adding workspace folder: ${gitResult.workspacePath}`);
+        channel.appendLine(`[MIGRATION] Note: Extension will restart after this operation`);
+        
+        // Save state before workspace update since extension host will restart
+        const stateFile = path.join(metaDir, 'migration-state.json');
+        const migrationState = {
+          step: 'workspace_updated',
+          gitResult,
+          gitUrl,
+          baseBranch,
+          commitMessage,
+          workspacePath: gitResult.workspacePath,
+          metaDir: metaDir,
+          timestamp: Date.now()
+        };
+        fs.writeFileSync(stateFile, JSON.stringify(migrationState, null, 2));
+        channel.appendLine(`[MIGRATION] Saved migration state to: ${stateFile}`);
         
         try {
+          channel.appendLine(`[MIGRATION] Executing workspace.updateWorkspaceFolders...`);
           await vscode.workspace.updateWorkspaceFolders(0, null, { uri: repoFolder });
-          // Give a moment for workspace to settle
+          channel.appendLine(`[MIGRATION] Workspace update call completed`);
+          
+          // If we reach here, extension host didn't restart - continue normally
           await new Promise(resolve => setTimeout(resolve, 1000));
+          channel.appendLine(`[MIGRATION] Extension host did not restart - continuing...`);
         } catch (err) {
           // Workspace update might fail if extension host is restarting - this is expected
-          channel.appendLine(`[gitAgent] Workspace update completed (extension may have restarted)`);
+          channel.appendLine(`[MIGRATION] Workspace update error (may be expected): ${err}`);
+          return; // Exit early since extension host is likely restarting
         }
       }
 
       // 2) gradleParser: parse build files
+      channel.appendLine('[MIGRATION] Step 2: Starting gradleParser...');
       vscode.window.showInformationMessage('gradleParser: Parsing Gradle build files...');
       telemetry.info('gradleParser_parse_start', { repo: gitResult.repo, branch: gitResult.branch });
+      
       const parseOutput = await gradleParser.parseProject(gitResult.workspacePath);
       const parsePath = path.join(metaDir, 'gradle-ast.json');
       fs.writeFileSync(parsePath, JSON.stringify(parseOutput, null, 2));
+      channel.appendLine(`[MIGRATION] Step 2 completed: gradle-ast.json written to ${parsePath}`);
       telemetry.info('gradleParser_parse_done', { outputPath: parsePath });
 
       // 3) transformationPlanner: plan unified diff patches
+      channel.appendLine('[MIGRATION] Step 3: Starting transformationPlanner...');
       vscode.window.showInformationMessage('transformationPlanner: Generating migration patches...');
       telemetry.info('planner_generate_start');
+      
       const planResult = await planner.generatePatches(parseOutput, gitResult.workspacePath);
       const patchPath = path.join(metaDir, 'patches.diff');
       fs.writeFileSync(patchPath, planResult.patchText);
+      channel.appendLine(`[MIGRATION] Step 3 completed: patches.diff written to ${patchPath}`);
       telemetry.info('planner_generate_done', { patchPath, filesChanged: planResult.filesChanged.length, riskSummary: planResult.riskSummary });
 
       // 4) gitAgent: apply patch, commit, and push
+      channel.appendLine('[MIGRATION] Step 4: Starting gitAgent apply, commit, and push...');
       vscode.window.showInformationMessage('gitAgent: Applying patches, committing, and pushing...');
       telemetry.info('gitAgent_commit_start', { patchPath });
+      
       const commitRes = await gitAgent.applyCommitAndPush({ patchPath, commitMessage });
+      channel.appendLine(`[MIGRATION] Step 4 completed: Changes committed and pushed`);
       telemetry.info('gitAgent_commit_done', commitRes);
 
       // Summary
@@ -209,6 +318,73 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   context.subscriptions.push(migrateCmd, channel);
+}
+
+async function resumeMigrationFromStep2(migrationState: any, channel: vscode.OutputChannel, telemetry: any) {
+  try {
+    channel.show(true);
+    
+    // Initialize components
+    const gitAgent = new GitAgent(channel, migrationState.metaDir);
+    const gradleParser = new GradleParser(channel, migrationState.metaDir);
+    const planner = new TransformationPlanner(channel, migrationState.metaDir);
+    
+    // Get paths from migration state
+    const workspacePath = migrationState.workspacePath;
+    const metaDir = migrationState.metaDir;
+    const commitMessage = migrationState.commitMessage;
+    
+    channel.appendLine(`[MIGRATION] Resuming migration for workspace: ${workspacePath}`);
+    
+    // 2) gradleParser: parse build files
+    channel.appendLine('[MIGRATION] Step 2: Starting gradleParser...');
+    vscode.window.showInformationMessage('gradleParser: Parsing Gradle build files...');
+    telemetry.info('gradleParser_parse_start_resumed', { workspacePath });
+    
+    const parseOutput = await gradleParser.parseProject(workspacePath);
+    const parsePath = path.join(metaDir, 'gradle-ast.json');
+    fs.writeFileSync(parsePath, JSON.stringify(parseOutput, null, 2));
+    channel.appendLine(`[MIGRATION] Step 2 completed: gradle-ast.json written to ${parsePath}`);
+    telemetry.info('gradleParser_parse_done_resumed', { outputPath: parsePath });
+
+    // 3) transformationPlanner: plan unified diff patches
+    channel.appendLine('[MIGRATION] Step 3: Starting transformationPlanner...');
+    vscode.window.showInformationMessage('transformationPlanner: Generating migration patches...');
+    telemetry.info('planner_generate_start_resumed');
+    
+    const planResult = await planner.generatePatches(parseOutput, workspacePath);
+    const patchPath = path.join(metaDir, 'patches.diff');
+    fs.writeFileSync(patchPath, planResult.patchText);
+    channel.appendLine(`[MIGRATION] Step 3 completed: patches.diff written to ${patchPath}`);
+    telemetry.info('planner_generate_done_resumed', { patchPath, filesChanged: planResult.filesChanged.length, riskSummary: planResult.riskSummary });
+
+    // 4) gitAgent: apply patch, commit, and push
+    channel.appendLine('[MIGRATION] Step 4: Starting gitAgent apply, commit, and push...');
+    vscode.window.showInformationMessage('gitAgent: Applying patches, committing, and pushing...');
+    telemetry.info('gitAgent_commit_start_resumed', { patchPath });
+    
+    const commitRes = await gitAgent.applyCommitAndPush({ patchPath, commitMessage });
+    channel.appendLine(`[MIGRATION] Step 4 completed: Changes committed and pushed`);
+    telemetry.info('gitAgent_commit_done_resumed', commitRes);
+
+    // Clean up state file
+    const stateFile = path.join(metaDir, 'migration-state.json');
+    try {
+      fs.unlinkSync(stateFile);
+      channel.appendLine('[MIGRATION] Cleaned up migration state file');
+    } catch {}
+
+    // Summary
+    const summary = `Migration complete (resumed).\nWorkspace: ${workspacePath}\nFiles changed: ${planResult.filesChanged.join(', ') || 'None'}\nRisk scores: ${planResult.riskSummary}\nNext steps: Run Gradle tasks in VS Code terminal (e.g., ./gradlew build).`;
+    channel.appendLine(summary);
+    vscode.window.showInformationMessage('Gradle Migration Automator: Migration complete (resumed). Check output channel for summary.');
+    
+  } catch (err) {
+    telemetry.error('workflow_resume_error', err);
+    const message = err instanceof Error ? err.message : String(err);
+    channel.appendLine(`[MIGRATION] Resume error: ${message}`);
+    vscode.window.showErrorMessage(`Gradle Migration Automator (resume): ${message}`);
+  }
 }
 
 export function deactivate() {}
