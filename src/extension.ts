@@ -113,6 +113,12 @@ export async function activate(context: vscode.ExtensionContext) {
       const commitMessage = await vscode.window.showInputBox({ prompt: 'Commit message for migration changes', ignoreFocusOut: true, value: 'chore: migrate Nexus to JFrog Artifactory' });
       if (!commitMessage) { throw new Error('Commit message is required'); }
 
+      // Optional: Reference project for context
+      const referenceProjectUrl = await vscode.window.showInputBox({
+        prompt: 'Enter reference project Git URL (optional - for migration context)',
+        placeHolder: 'https://github.com/example/gradle-platform-project.git'
+      });
+
       const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || path.join(process.cwd(), 'workspace');
       const metaDir = path.join(workspaceRoot, '.copilot', 'meta');
       fs.mkdirSync(metaDir, { recursive: true });
@@ -120,7 +126,7 @@ export async function activate(context: vscode.ExtensionContext) {
       // Initialize participants (dependency injection style)
       const gitAgent = new GitAgent(channel, metaDir);
       const gradleParser = new GradleParser(channel, metaDir);
-      const planner = new TransformationPlanner(channel, metaDir);
+      const planner = new TransformationPlanner(channel, metaDir, referenceProjectUrl);
 
       // 1) gitAgent: clone and prepare workspace/branch
       vscode.window.showInformationMessage('gitAgent: Cloning repository and preparing branch...');

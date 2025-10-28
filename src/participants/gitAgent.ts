@@ -24,18 +24,25 @@ export class GitAgent {
   async cloneAndPrepare(params: GitAgentCloneParams): Promise<GitAgentCloneResult> {
     const { gitUrl, baseBranch } = params;
     const repoName = path.basename(gitUrl.replace(/\.git$/, ''));
-    const workspaceParent = path.resolve(path.join(this.metaDir, '..'));
-    const workspacePath = path.join(workspaceParent, repoName);
+    const workspaceRoot = path.resolve(path.join(this.metaDir, '..', '..'));
+    const workspacePath = workspaceRoot;
 
-    fs.mkdirSync(workspaceParent, { recursive: true });
+    // Check if workspace is empty or contains git repo
+    const isGitRepo = fs.existsSync(path.join(workspacePath, '.git'));
+    const isEmpty = fs.readdirSync(workspacePath).filter(f => !f.startsWith('.')).length === 0;
 
     // Clone
-    if (!fs.existsSync(workspacePath)) {
+    if (!isGitRepo && isEmpty) {
       this.channel.appendLine(`[gitAgent] Cloning ${gitUrl} -> ${workspacePath}`);
-      let res = await run(`git clone ${gitUrl} "${workspacePath}"`);
+      let res = await run(`git clone ${gitUrl} .`, workspacePath);
       if (res.code !== 0) throw new Error(`git clone failed: ${res.stderr}`);
+    } else if (isGitRepo) {
+      this.channel.appendLine(`[gitAgent] Git repo already exists at ${workspacePath}`);
+      // Fetch latest changes
+      let res = await run(`git fetch origin`, workspacePath);
+      if (res.code !== 0) this.channel.appendLine(`[gitAgent] Warning: git fetch failed: ${res.stderr}`);
     } else {
-      this.channel.appendLine(`[gitAgent] Repo already exists at ${workspacePath}`);
+      throw new Error(`Workspace ${workspacePath} is not empty and not a git repository. Please use an empty workspace.`);
     }
 
     // Checkout base branch

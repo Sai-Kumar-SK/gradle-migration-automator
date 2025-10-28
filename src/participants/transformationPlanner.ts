@@ -10,6 +10,29 @@ const EXCLUDED_DEPENDENCIES = [
   // Add more dependencies to exclude here
 ]
 
+// Configuration: Version keys to exclude from libs.versions.toml
+const EXCLUDED_VERSION_KEYS = [
+  'uploadArchivesUrl',
+  'nexusUsername', 
+  'nexusPassword',
+  'nexusUrl',
+  'nexusRepo',
+  'nexusSnapshots',
+  'nexusReleases',
+  'artifactoryUrl',
+  'artifactoryUsername',
+  'artifactoryPassword',
+  'publishUrl',
+  'publishUsername',
+  'publishPassword',
+  'mavenUrl',
+  'mavenUsername',
+  'mavenPassword',
+  'repositoryUrl',
+  'repositoryUsername',
+  'repositoryPassword'
+]
+
 // Configuration: Gradle-platform plugins to add to libs.versions.toml
 const GRADLE_PLATFORM_PLUGINS = [
   {
@@ -73,25 +96,49 @@ function generateDeleteFileDiff(fileRelPath: string, oldText: string): string {
 function stripRepositoriesAndWrapper(content: string): { updated: string; changes: number } {
   let changes = 0
   let updated = content
+  
   // Remove repositories blocks in any scope
   const repoRegex = /repositories\s*\{[\s\S]*?\}/g
   updated = updated.replace(repoRegex, () => { changes++; return '' })
-  // Remove publishing repositories blocks (keep publications)
-  const pubReposRegex = /publishing\s*\{[\s\S]*?repositories\s*\{[\s\S]*?\}[\s\S]*?\}/g
-  updated = updated.replace(pubReposRegex, (m) => {
-    changes++
-    // Try to retain publications sub-blocks only
-    const pubs = m.match(/publications\s*\{[\s\S]*?\}/)
-    return pubs ? pubs[0] : ''
-  })
+  
+  // Remove entire publishing blocks (including repositories and publications)
+  const publishingRegex = /publishing\s*\{[\s\S]*?\}/g
+  updated = updated.replace(publishingRegex, () => { changes++; return '' })
+  
+  // Remove uploadArchives tasks and configurations
+  const uploadArchivesRegex = /(uploadArchives\s*\{[\s\S]*?\}|task\s+uploadArchives[\s\S]*?\})/g
+  updated = updated.replace(uploadArchivesRegex, () => { changes++; return '' })
+  
+  // Remove modifyPom configurations
+  const modifyPomRegex = /modifyPom\s*\{[\s\S]*?\}/g
+  updated = updated.replace(modifyPomRegex, () => { changes++; return '' })
+  
+  // Remove nexus-related configurations and properties
+  const nexusConfigRegex = /(nexus\s*\{[\s\S]*?\}|nexusStaging\s*\{[\s\S]*?\})/g
+  updated = updated.replace(nexusConfigRegex, () => { changes++; return '' })
+  
+  // Remove signing configurations
+  const signingRegex = /signing\s*\{[\s\S]*?\}/g
+  updated = updated.replace(signingRegex, () => { changes++; return '' })
+  
   // Remove wrapper tasks/blocks
   const wrapperTaskRegex = /(task\s+wrapper\b[\s\S]*?\}|tasks\.register\(\s*['"]wrapper['"][\s\S]*?\}|\bwrapper\s*\{[\s\S]*?\})/g
   updated = updated.replace(wrapperTaskRegex, () => { changes++; return '' })
+  
   // Remove apply from versions.gradle and ext blocks
   const applyVersionsRegex = /apply\s+from:\s*['"]versions\.gradle['"]/g
   updated = updated.replace(applyVersionsRegex, () => { changes++; return '' })
   const extBlockRegex = /(^|\n)\s*ext\s*\{[\s\S]*?\}/g
   updated = updated.replace(extBlockRegex, () => { changes++; return '' })
+  
+  // Remove nexus-related property assignments
+  const nexusPropsRegex = /(uploadArchivesUrl\s*=.*|nexusUsername\s*=.*|nexusPassword\s*=.*|nexusUrl\s*=.*)/g
+  updated = updated.replace(nexusPropsRegex, () => { changes++; return '' })
+  
+  // Remove maven-publish plugin applications
+  const mavenPublishPluginRegex = /apply\s+plugin:\s*['"]maven-publish['"]/g
+  updated = updated.replace(mavenPublishPluginRegex, () => { changes++; return '' })
+  
   return { updated, changes }
 }
 
@@ -161,7 +208,11 @@ function extractDependencies(text: string): Array<{ conf: string; group?: string
   return out
 }
 
-function buildToml(versions: Record<string, string>, deps: Array<{ group?: string; artifact?: string; version?: string }>): string {
+function buildToml(
+  versions: Record<string, string>, 
+  deps: Array<{ group?: string; artifact?: string; version?: string }>,
+  referenceContext?: { libsVersions?: any; buildPatterns?: string[] }
+): string {
   const lines: string[] = []
   
   // Add versions section
@@ -170,13 +221,22 @@ function buildToml(versions: Record<string, string>, deps: Array<{ group?: strin
   // Add gradle-platform version
   lines.push(`plasmaGradlePlugins = "${GRADLE_PLATFORM_VERSION}"`)
   
-  // Add extracted versions (excluding any that match excluded dependencies)
-  for (const [k, v] of Object.entries(versions)) {
-    const shouldExclude = EXCLUDED_DEPENDENCIES.some(excluded => 
+  // Merge reference versions with extracted versions (reference takes precedence)
+  const mergedVersions = { ...versions };
+  if (referenceContext?.libsVersions?.versions) {
+    Object.assign(mergedVersions, referenceContext.libsVersions.versions);
+  }
+
+  // Add extracted versions (excluding any that match excluded dependencies or version keys)
+  for (const [k, v] of Object.entries(mergedVersions)) {
+    const shouldExcludeDep = EXCLUDED_DEPENDENCIES.some(excluded => 
       k.toLowerCase().includes(excluded.toLowerCase()) || 
       v.toLowerCase().includes(excluded.toLowerCase())
     )
-    if (!shouldExclude) {
+    const shouldExcludeKey = EXCLUDED_VERSION_KEYS.some(excluded => 
+      k.toLowerCase().includes(excluded.toLowerCase())
+    )
+    if (!shouldExcludeDep && !shouldExcludeKey) {
       lines.push(`${k} = "${v}"`)
     }
   }
@@ -186,6 +246,13 @@ function buildToml(versions: Record<string, string>, deps: Array<{ group?: strin
   // Add gradle-platform plugins as libraries
   for (const plugin of GRADLE_PLATFORM_PLUGINS) {
     lines.push(`${plugin.alias} = { module = "${plugin.module}", version.ref = "${plugin.versionRef}" }`)
+  }
+  
+  // Add reference libraries if available
+  if (referenceContext?.libsVersions?.libraries) {
+    for (const [alias, libDef] of Object.entries(referenceContext.libsVersions.libraries)) {
+      lines.push(`${alias} = ${JSON.stringify(libDef).replace(/"/g, '"')}`)
+    }
   }
   
   // Add extracted dependencies (excluding unwanted ones)
@@ -213,7 +280,12 @@ function buildToml(versions: Record<string, string>, deps: Array<{ group?: strin
 }
 
 export class TransformationPlanner {
-  constructor(private channel: vscode.OutputChannel, private metaDir: string, private projectRoot?: string) {}
+  constructor(
+    private channel: vscode.OutputChannel, 
+    private metaDir: string, 
+    private referenceProjectUrl?: string,
+    private projectRoot?: string
+  ) {}
 
   async provideWorkflowInstructions(): Promise<void> {
     const instructions = [
@@ -260,11 +332,114 @@ export class TransformationPlanner {
     console.log(instructions.join('\n'));
   }
 
+  private async cloneReferenceProject(): Promise<string | null> {
+    if (!this.referenceProjectUrl) {
+      return null;
+    }
+
+    try {
+      const { execSync } = require('child_process');
+      const referenceDir = path.join(this.metaDir, 'reference-project');
+      
+      // Remove existing reference directory if it exists
+      if (fs.existsSync(referenceDir)) {
+        fs.rmSync(referenceDir, { recursive: true, force: true });
+      }
+
+      this.channel.appendLine(`[transformationPlanner] Cloning reference project: ${this.referenceProjectUrl}`);
+      execSync(`git clone "${this.referenceProjectUrl}" "${referenceDir}"`, { stdio: 'inherit' });
+      
+      this.channel.appendLine(`[transformationPlanner] ✓ Reference project cloned to ${referenceDir}`);
+      return referenceDir;
+    } catch (error) {
+      this.channel.appendLine(`[transformationPlanner] ⚠️ Failed to clone reference project: ${error}`);
+      return null;
+    }
+  }
+
+  private async analyzeReferenceProject(referenceDir: string): Promise<{ libsVersions?: any; buildPatterns?: string[] }> {
+    try {
+      const libsVersionsPath = path.join(referenceDir, 'gradle', 'libs.versions.toml');
+      const buildGradlePath = path.join(referenceDir, 'build.gradle');
+      
+      const result: { libsVersions?: any; buildPatterns?: string[] } = {};
+
+      // Parse reference libs.versions.toml if it exists
+      if (fs.existsSync(libsVersionsPath)) {
+        const libsContent = fs.readFileSync(libsVersionsPath, 'utf-8');
+        result.libsVersions = this.parseTomlContent(libsContent);
+        this.channel.appendLine(`[transformationPlanner] ✓ Analyzed reference libs.versions.toml`);
+      }
+
+      // Extract build patterns from reference build.gradle
+      if (fs.existsSync(buildGradlePath)) {
+        const buildContent = fs.readFileSync(buildGradlePath, 'utf-8');
+        result.buildPatterns = this.extractBuildPatterns(buildContent);
+        this.channel.appendLine(`[transformationPlanner] ✓ Extracted build patterns from reference project`);
+      }
+
+      return result;
+    } catch (error) {
+      this.channel.appendLine(`[transformationPlanner] ⚠️ Failed to analyze reference project: ${error}`);
+      return {};
+    }
+  }
+
+  private parseTomlContent(content: string): any {
+    // Simple TOML parser for libs.versions.toml
+    const result: any = { versions: {}, libraries: {}, plugins: {} };
+    let currentSection = '';
+    
+    const lines = content.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        currentSection = trimmed.slice(1, -1);
+      } else if (trimmed.includes('=') && currentSection) {
+        const [key, value] = trimmed.split('=', 2);
+        const cleanKey = key.trim();
+        const cleanValue = value.trim().replace(/['"]/g, '');
+        if (result[currentSection]) {
+          result[currentSection][cleanKey] = cleanValue;
+        }
+      }
+    }
+    return result;
+  }
+
+  private extractBuildPatterns(content: string): string[] {
+    const patterns: string[] = [];
+    
+    // Extract common patterns like plugin applications, dependency configurations, etc.
+    const pluginMatches = content.match(/id\s+['"][^'"]+['"]/g);
+    if (pluginMatches) {
+      patterns.push(...pluginMatches);
+    }
+    
+    const dependencyMatches = content.match(/implementation\s+libs\.[a-zA-Z0-9.-]+/g);
+    if (dependencyMatches) {
+      patterns.push(...dependencyMatches);
+    }
+    
+    return patterns;
+  }
+
   async executeStepByStepMigration(parse: GradleParseOutput, projectRoot: string): Promise<{ filesChanged: string[]; riskSummary: string }>{
     const filesChanged: string[] = []
     let highRisk = 0, mediumRisk = 0, lowRisk = 0
 
     this.channel.appendLine(`[transformationPlanner] Starting step-by-step Gradle migration for: ${projectRoot}`)
+
+    // Step 0: Clone and analyze reference project if provided
+    let referenceContext: { libsVersions?: any; buildPatterns?: string[] } = {};
+    if (this.referenceProjectUrl) {
+      this.channel.appendLine(`[transformationPlanner] Step 0: Analyzing reference project for context`)
+      const referenceDir = await this.cloneReferenceProject();
+      if (referenceDir) {
+        referenceContext = await this.analyzeReferenceProject(referenceDir);
+        this.channel.appendLine(`[transformationPlanner] ✓ Reference project analysis complete`)
+      }
+    }
 
     // Step 1: Update settings.gradle - keep only rootProject.name and include lines
     this.channel.appendLine(`[transformationPlanner] Step 1: Updating settings.gradle`)
@@ -305,7 +480,7 @@ export class TransformationPlanner {
     const allText = buildFiles.map(p => fs.readFileSync(p, 'utf-8')).join('\n\n')
     const versions = extractVersionsFromExt(allText)
     const deps = extractDependencies(allText)
-    const toml = buildToml(versions, deps)
+    const toml = buildToml(versions, deps, referenceContext)
 
     const tomlRel = 'gradle/libs.versions.toml'
     const tomlAbs = path.join(projectRoot, tomlRel)
@@ -315,9 +490,15 @@ export class TransformationPlanner {
     mediumRisk++
     this.channel.appendLine(`[transformationPlanner] ✓ Generated libs.versions.toml`)
 
-    // Step 4: libs.versions.toml customization is already included in buildToml function
+    // Step 4: Update gradle-wrapper.properties with version preservation
+    this.channel.appendLine(`[transformationPlanner] Step 4: Updating gradle-wrapper.properties`)
+    this.updateGradleWrapperProperties(projectRoot, filesChanged)
+    lowRisk++
+    this.channel.appendLine(`[transformationPlanner] ✓ Updated gradle-wrapper.properties`)
 
-    // Step 5: Update subproject build.gradle files
+    // Step 5: libs.versions.toml customization is already included in buildToml function
+
+    // Step 6: Update subproject build.gradle files
     this.channel.appendLine(`[transformationPlanner] Step 5: Updating build.gradle files`)
     const rootBuildPath = path.join(projectRoot, 'build.gradle')
     if (fs.existsSync(rootBuildPath)) {
@@ -325,6 +506,15 @@ export class TransformationPlanner {
       filesChanged.push('build.gradle')
       lowRisk++
       this.channel.appendLine(`[transformationPlanner] ✓ Deleted root build.gradle`)
+    }
+
+    // Delete versions.gradle if it exists
+    const versionsGradlePath = path.join(projectRoot, 'versions.gradle')
+    if (fs.existsSync(versionsGradlePath)) {
+      fs.unlinkSync(versionsGradlePath)
+      filesChanged.push('versions.gradle')
+      lowRisk++
+      this.channel.appendLine(`[transformationPlanner] ✓ Deleted versions.gradle`)
     }
 
     for (const fileAbs of buildFiles) {
@@ -658,9 +848,61 @@ export class TransformationPlanner {
     copyRecursively(metaBuildSrcPath, projectBuildSrcPath)
   }
 
+  private updateGradleWrapperProperties(projectRoot: string, filesChanged: string[]): void {
+    const currentWrapperPath = path.join(projectRoot, 'gradle', 'wrapper', 'gradle-wrapper.properties')
+    const metaWrapperPath = path.join(this.metaDir, 'gradle-wrapper.properties')
+    
+    if (!fs.existsSync(metaWrapperPath)) {
+      this.channel.appendLine(`[transformationPlanner] ⚠ Warning: .copilot/meta/gradle-wrapper.properties not found, skipping wrapper update`)
+      return
+    }
+    
+    let currentVersion = '6.8' // default fallback
+    
+    // Extract current Gradle version if wrapper exists
+    if (fs.existsSync(currentWrapperPath)) {
+      try {
+        const currentContent = fs.readFileSync(currentWrapperPath, 'utf-8')
+        const versionMatch = currentContent.match(/distributionUrl=.*gradle-([0-9]+\.[0-9]+(?:\.[0-9]+)?)-/)
+        if (versionMatch) {
+          currentVersion = versionMatch[1]
+          this.channel.appendLine(`[transformationPlanner] Preserving Gradle version: ${currentVersion}`)
+        }
+      } catch (error) {
+        this.channel.appendLine(`[transformationPlanner] Warning: Could not read current wrapper properties: ${error}`)
+      }
+    }
+    
+    // Read meta wrapper properties and update version
+    try {
+      const metaContent = fs.readFileSync(metaWrapperPath, 'utf-8')
+      const updatedContent = metaContent.replace(
+        /distributionUrl=.*gradle-[0-9]+\.[0-9]+(?:\.[0-9]+)?-/,
+        `distributionUrl=https\\://services.gradle.org/distributions/gradle-${currentVersion}-`
+      )
+      
+      // Ensure wrapper directory exists
+      fs.mkdirSync(path.dirname(currentWrapperPath), { recursive: true })
+      fs.writeFileSync(currentWrapperPath, updatedContent)
+      
+      const relPath = path.relative(projectRoot, currentWrapperPath)
+      filesChanged.push(relPath)
+      
+    } catch (error) {
+      this.channel.appendLine(`[transformationPlanner] Error updating gradle-wrapper.properties: ${error}`)
+    }
+  }
+
   private findAllBuildGradleFiles(projectRoot: string): string[] {
     const buildFiles: string[] = []
     const stack: string[] = [projectRoot]
+    
+    // Also check for versions.gradle in root
+    const versionsGradlePath = path.join(projectRoot, 'versions.gradle')
+    if (fs.existsSync(versionsGradlePath)) {
+      buildFiles.push(versionsGradlePath)
+    }
+    
     while (stack.length) {
       const dir = stack.pop()!
       const entries = fs.readdirSync(dir, { withFileTypes: true })
