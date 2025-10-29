@@ -101,6 +101,14 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
         
+        // Handle testAI command
+        if (prompt === 'testAI' || prompt === 'test') {
+          stream.markdown(`🧪 **Testing AI Connection...**\n\nRunning a simple connectivity test with the selected language model.`);
+          await planner.testAIConnection();
+          stream.markdown(`\n✅ **Test completed!** Check the transformationPlanner output channel for detailed results.`);
+          return;
+        }
+        
         // Handle regular migration workflow
         const gitMetaPath = path.join(metaDir, 'gitAgent.json');
         let workspacePath = workspaceRoot;

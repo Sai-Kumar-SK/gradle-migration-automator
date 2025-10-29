@@ -307,13 +307,84 @@ export class TransformationPlanner {
    * @param modelId The model ID to prefer (e.g., 'gpt-4o', 'gpt-4') or 'auto' to reset to auto-selection
    */
   setPreferredModel(modelId: string): void {
-    if (modelId.toLowerCase() === 'auto') {
+    if (modelId === 'auto') {
       this.preferredModelId = undefined;
-      this.channel.appendLine(`[transformationPlanner] ✓ Reset to auto-selection mode`);
+      this.channel.appendLine(`[transformationPlanner] ✓ Model preference reset to auto-selection`);
     } else {
       this.preferredModelId = modelId;
       this.channel.appendLine(`[transformationPlanner] ✓ Preferred model set to: ${modelId}`);
     }
+  }
+
+  async testAIConnection(): Promise<void> {
+    this.channel.appendLine(`[transformationPlanner] 🧪 Testing AI connection with simple prompt...`);
+    
+    const simplePrompt = "Hello! Please respond with 'AI connection working' to confirm you can receive and respond to prompts.";
+    
+    try {
+      const response = await this.invokeAIGeneration(simplePrompt);
+      
+      if (response && response.content) {
+        this.channel.appendLine(`[transformationPlanner] ✅ AI connection test SUCCESSFUL!`);
+        this.channel.appendLine(`[transformationPlanner] 📝 Response: ${JSON.stringify(response.content).substring(0, 200)}`);
+      } else {
+        this.channel.appendLine(`[transformationPlanner] ❌ AI connection test FAILED - received null or empty response`);
+      }
+    } catch (error) {
+      this.channel.appendLine(`[transformationPlanner] ❌ AI connection test ERROR: ${error}`);
+    }
+  }
+
+  private truncatePromptIntelligently(prompt: string, maxLength: number): string {
+    if (prompt.length <= maxLength) {
+      return prompt;
+    }
+
+    // Preserve the most important parts of the prompt
+    const lines = prompt.split('\n');
+    const importantSections = [];
+    let currentLength = 0;
+
+    // Always keep the task description (first few lines)
+    const taskSection = lines.slice(0, 10).join('\n');
+    if (taskSection.length < maxLength * 0.3) {
+      importantSections.push(taskSection);
+      currentLength += taskSection.length;
+    }
+
+    // Keep the output format (usually at the end)
+    const outputFormatStart = prompt.lastIndexOf('## Expected Output Format:');
+    if (outputFormatStart > 0) {
+      const outputSection = prompt.substring(outputFormatStart);
+      if (currentLength + outputSection.length < maxLength * 0.9) {
+        importantSections.push(outputSection);
+        currentLength += outputSection.length;
+      }
+    }
+
+    // Fill remaining space with instructions
+    const instructionsStart = prompt.indexOf('## Instructions:');
+    if (instructionsStart > 0 && currentLength < maxLength * 0.7) {
+      const instructionsEnd = outputFormatStart > 0 ? outputFormatStart : prompt.length;
+      const instructionsSection = prompt.substring(instructionsStart, instructionsEnd);
+      const remainingSpace = maxLength - currentLength - 100; // Leave some buffer
+      
+      if (instructionsSection.length <= remainingSpace) {
+        importantSections.splice(-1, 0, instructionsSection); // Insert before output format
+      } else {
+        const truncatedInstructions = instructionsSection.substring(0, remainingSpace) + '\n[...truncated for length...]';
+        importantSections.splice(-1, 0, truncatedInstructions);
+      }
+    }
+
+    const result = importantSections.join('\n\n');
+    
+    // Final safety check
+    if (result.length > maxLength) {
+      return result.substring(0, maxLength - 50) + '\n[...truncated for length...]';
+    }
+    
+    return result;
   }
 
   async provideWorkflowInstructions(): Promise<void> {
@@ -473,42 +544,31 @@ export class TransformationPlanner {
     projectContext: AIGenerationContext,
     opsServerPath: string
   ): string {
-    return `
-# Gradle Migration AI Assistant - libs.versions.toml Generation
+    // Create a simplified prompt that's more likely to work within token limits
+    const dependenciesList = projectContext.dependencies.slice(0, 10).join(', '); // Limit dependencies
+    
+    return `# Generate libs.versions.toml for Gradle Version Catalog
 
-## Task: Generate libs.versions.toml for Version Catalog Migration
+## Task: Create libs.versions.toml file
 
-You are generating a libs.versions.toml file for a Gradle project migration to use TOML-based version catalogs.
-
-## Reference Context (ops_server)
-Please refer to the following files from the ops_server reference project at: ${opsServerPath}
-
-**REQUIRED REFERENCE FILES:**
-- \`${opsServerPath}/gradle/libs.versions.toml\` - Use as the primary reference for structure and patterns
-- \`${opsServerPath}/buildSrc/\` - Reference for buildSrc conventions (if needed)
-
-## Current Project Context:
-- Project Type: ${projectContext.projectType}
-- Dependencies to migrate: ${projectContext.dependencies.join(', ')}
-- Build patterns detected: ${projectContext.buildPatterns.join(', ')}
+Project Type: ${projectContext.projectType}
+Dependencies: ${dependenciesList}
 
 ## Instructions:
-1. **READ the ops_server libs.versions.toml file** to understand the structure and patterns
-2. **INCLUDE ONLY** the dependencies found in the current project (listed above)
-3. **FOLLOW** the version catalog structure from ops_server
-4. **USE** appropriate version references and library aliases
-5. **MAINTAIN** compatibility with existing dependency declarations
+1. Create a TOML file with [versions], [libraries], and [plugins] sections
+2. Include only the dependencies listed above
+3. Use semantic version references
+4. Follow standard Gradle version catalog patterns
 
-## Expected Output Format:
+## Output Format:
 \`\`\`json
 {
-  "libsVersionsToml": "# Generated libs.versions.toml content",
+  "libsVersionsToml": "# TOML content here",
   "confidence": 0.9
 }
 \`\`\`
 
-Generate a focused libs.versions.toml file based on the current project's dependencies and ops_server patterns.
-`;
+Generate the libs.versions.toml content.`;
   }
 
   private createBuildGradleEnhancementPrompt(
@@ -517,44 +577,23 @@ Generate a focused libs.versions.toml file based on the current project's depend
     opsServerPath: string
   ): string {
     const isRootBuild = filePath.endsWith('build.gradle') && !filePath.includes('/');
-    const isAppModule = filePath.includes('/app/') || filePath.includes('\\app\\');
+    const dependenciesList = projectContext.dependencies.slice(0, 8).join(', '); // Limit dependencies
     
-    return `
-# Gradle Migration AI Assistant - build.gradle Enhancement
+    return `# Enhance build.gradle for Version Catalog Migration
 
-## Task: Enhance ${filePath} for Version Catalog Migration
+## Task: Update ${filePath}
 
-You are enhancing a specific build.gradle file to work with TOML-based version catalogs.
-
-## Reference Context (ops_server)
-Please refer to the following files from the ops_server reference project at: ${opsServerPath}
-
-**REQUIRED REFERENCE FILES:**
-${isRootBuild ? `
-- \`${opsServerPath}/build.gradle\` - Root build.gradle reference
-- \`${opsServerPath}/buildSrc/\` - BuildSrc structure and conventions
-` : isAppModule ? `
-- \`${opsServerPath}/app/build.gradle\` - App module reference
-- \`${opsServerPath}/gradle/libs.versions.toml\` - For version catalog usage
-` : `
-- \`${opsServerPath}/*/build.gradle\` - Subproject build.gradle references
-- \`${opsServerPath}/gradle/libs.versions.toml\` - For version catalog usage
-`}
-
-## Current File Context:
-- File: ${filePath}
-- Project Type: ${projectContext.projectType}
-- Dependencies: ${projectContext.dependencies.join(', ')}
-- Custom Configurations: ${JSON.stringify(projectContext.customConfigurations)}
+File Type: ${isRootBuild ? 'Root build.gradle' : 'Module build.gradle'}
+Project: ${projectContext.projectType}
+Dependencies: ${dependenciesList}
 
 ## Instructions:
-1. **READ the appropriate ops_server build.gradle files** for reference patterns
-2. **REMOVE** repositories blocks, publishing configs, wrapper tasks
-3. **APPLY** common.lib plugin if it's a subproject
-4. **PRESERVE** existing dependency declarations (don't convert to libs.* yet)
-5. **FOLLOW** ops_server conventions for structure and organization
+1. Remove repositories blocks and publishing configs
+2. ${isRootBuild ? 'Keep plugins and subprojects' : 'Add common.lib plugin if subproject'}
+3. Preserve existing dependencies
+4. Clean up wrapper tasks
 
-## Expected Output Format:
+## Output Format:
 \`\`\`json
 {
   "buildGradleUpdates": {
@@ -564,8 +603,7 @@ ${isRootBuild ? `
 }
 \`\`\`
 
-Generate an enhanced build.gradle file following ops_server patterns.
-`;
+Generate the enhanced build.gradle content.`;
   }
 
   private createRootBuildGradlePrompt(
@@ -768,6 +806,16 @@ Generate buildSrc files and subproject updates following ops_server patterns.
     try {
       this.channel.appendLine(`[transformationPlanner] 🔍 Starting AI request with prompt length: ${prompt.length}`);
       
+      // Validate and truncate prompt if too long (VS Code LM has strict limits)
+      const MAX_PROMPT_LENGTH = 8000; // Conservative limit for VS Code Language Models
+      let processedPrompt = prompt;
+      
+      if (prompt.length > MAX_PROMPT_LENGTH) {
+        this.channel.appendLine(`[transformationPlanner] ⚠️ Prompt too long (${prompt.length} chars), truncating to ${MAX_PROMPT_LENGTH} chars`);
+        processedPrompt = this.truncatePromptIntelligently(prompt, MAX_PROMPT_LENGTH);
+        this.channel.appendLine(`[transformationPlanner] ✓ Prompt truncated to ${processedPrompt.length} characters`);
+      }
+      
       // Use VS Code's Language Model API to interact with Copilot models
       // Prefer GPT-4.1 (gpt-4o) over GPT-4.0 (gpt-4) when available
       
@@ -788,7 +836,7 @@ Generate buildSrc files and subproject updates following ops_server patterns.
 
       // Create chat request with the selected model
       const messages: vscode.LanguageModelChatMessage[] = [
-        vscode.LanguageModelChatMessage.User(prompt)
+        vscode.LanguageModelChatMessage.User(processedPrompt)
       ];
       this.channel.appendLine(`[transformationPlanner] ✓ Created chat messages array with ${messages.length} message(s)`);
 
