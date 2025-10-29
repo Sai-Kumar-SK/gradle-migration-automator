@@ -467,136 +467,154 @@ export class TransformationPlanner {
     return result;
   }
 
-  private async generateAIEnhancedContent(
-    projectContext: AIGenerationContext,
-    referenceContext: { libsVersions?: any; buildPatterns?: string[] }
-  ): Promise<AIGeneratedContent> {
-    try {
-      // Create AI prompt with ops_server context
-      const prompt = this.createAIPrompt(projectContext, referenceContext);
-      
-      // Use Copilot's AI capabilities for intelligent generation
-      const aiResponse = await this.invokeAIGeneration(prompt);
-      
-      // Log AI response for debugging
-      this.logAIResponse('libs-versions-toml-generation', prompt, aiResponse);
-      
-      // Handle different response structures from real AI vs fallback
-      let content = aiResponse;
-      if (aiResponse.content) {
-        // Real AI response has content field
-        content = aiResponse.content;
-      }
-      
-      return {
-        buildSrcFiles: content.buildSrcFiles || aiResponse.buildSrcFiles || {},
-        libsVersionsToml: content.libsVersionsToml || aiResponse.libsVersionsToml || '',
-        buildGradleUpdates: content.buildGradleUpdates || aiResponse.buildGradleUpdates || {},
-        confidence: aiResponse.confidence || content.confidence || 0.7
-      };
-    } catch (error) {
-      this.channel.appendLine(`[transformationPlanner] ⚠️ AI generation failed: ${error}`);
-      return {
-        buildSrcFiles: {},
-        libsVersionsToml: '',
-        buildGradleUpdates: {},
-        confidence: 0
-      };
-    }
-  }
 
-  private createAIPrompt(
+
+  private createLibsVersionsTomlPrompt(
     projectContext: AIGenerationContext,
-    referenceContext: { 
-      libsVersions?: any; 
-      buildPatterns?: string[];
-      repositoryStructure?: any;
-      allBuildFiles?: Record<string, string>;
-      projectMetadata?: any;
-    }
+    opsServerPath: string
   ): string {
     return `
-# Gradle Migration AI Assistant - TOML-Based Version Catalog Modernization
+# Gradle Migration AI Assistant - libs.versions.toml Generation
 
-## Context: ops_server Reference Repository
-You are helping migrate a Gradle project to a modern TOML-based version catalog model and build-src conventions. 
+## Task: Generate libs.versions.toml for Version Catalog Migration
 
-**IMPORTANT**: Please refer to the ops_server repository as a comprehensive reference implementation. Think carefully about the patterns and best practices demonstrated in ops_server before making suggestions. Use ops_server as your primary guide for modernization decisions.
+You are generating a libs.versions.toml file for a Gradle project migration to use TOML-based version catalogs.
 
-## Complete ops_server Repository Context:
+## Reference Context (ops_server)
+Please refer to the following files from the ops_server reference project at: ${opsServerPath}
 
-${referenceContext.repositoryStructure ? `
-### Repository Structure:
-- Modules: ${referenceContext.repositoryStructure.modules.join(', ')}
-- BuildSrc Files: ${referenceContext.repositoryStructure.buildSrcFiles.length} files
-- Config Files: ${referenceContext.repositoryStructure.configFiles.join(', ')}
-- Gradle Files: ${referenceContext.repositoryStructure.gradleFiles.join(', ')}
-` : ''}
-
-${referenceContext.projectMetadata ? `
-### Project Architecture:
-- Technologies: ${referenceContext.projectMetadata.technologies.join(', ')}
-- Project Type: ${referenceContext.projectMetadata.projectType}
-` : ''}
-
-${referenceContext.libsVersions ? `
-### libs.versions.toml from ops_server:
-\`\`\`toml
-${JSON.stringify(referenceContext.libsVersions, null, 2)}
-\`\`\`
-` : ''}
-
-${referenceContext.allBuildFiles ? `
-### All Build Files from ops_server (as examples):
-${Object.entries(referenceContext.allBuildFiles).slice(0, 5).map(([path, content]) => `
-#### ${path}:
-\`\`\`gradle
-${content.substring(0, 500)}${content.length > 500 ? '...' : ''}
-\`\`\`
-`).join('\n')}
-` : ''}
-
-${referenceContext.buildPatterns ? `
-### Comprehensive Build Patterns from ops_server:
-${referenceContext.buildPatterns.slice(0, 20).join('\n')}
-` : ''}
+**REQUIRED REFERENCE FILES:**
+- \`${opsServerPath}/gradle/libs.versions.toml\` - Use as the primary reference for structure and patterns
+- \`${opsServerPath}/buildSrc/\` - Reference for buildSrc conventions (if needed)
 
 ## Current Project Context:
 - Project Type: ${projectContext.projectType}
-- Dependencies: ${projectContext.dependencies.join(', ')}
-- Custom Configurations: ${JSON.stringify(projectContext.customConfigurations, null, 2)}
+- Dependencies to migrate: ${projectContext.dependencies.join(', ')}
+- Build patterns detected: ${projectContext.buildPatterns.join(', ')}
 
-## Task: Modernize to TOML-Based Version Catalog Model
-Generate enhanced Gradle files that modernize the project to use TOML-based version catalogs:
-
-**Primary Instructions:**
-1. **REFER TO ops_server**: Study the ops_server patterns carefully and think about how they apply to this project
-2. **TOML-BASED MODERNIZATION**: Convert the project to use gradle/libs.versions.toml for dependency management
-3. **SELECTIVE REFERENCE**: Use ops_server as a REFERENCE ONLY - do not copy all dependencies unnecessarily
-4. **PROJECT-SPECIFIC**: Include only the current project's dependencies in libs.versions.toml
-5. **PATTERN ADOPTION**: Follow ops_server conventions and patterns for structure and organization
-6. **INTELLIGENT ADAPTATION**: Apply build.gradle patterns from ops_server as examples, not direct copies
-7. **COMPATIBILITY**: Maintain compatibility with existing build logic while modernizing
-8. **BUILDSRC CONVENTIONS**: Use buildSrc conventions from ops_server where applicable
-9. **MODERN PRACTICES**: Use modern Gradle best practices and TOML version catalog features
-10. **SMART DEPENDENCY SELECTION**: Be intelligent about which dependencies and versions to include based on the current project's needs
+## Instructions:
+1. **READ the ops_server libs.versions.toml file** to understand the structure and patterns
+2. **INCLUDE ONLY** the dependencies found in the current project (listed above)
+3. **FOLLOW** the version catalog structure from ops_server
+4. **USE** appropriate version references and library aliases
+5. **MAINTAIN** compatibility with existing dependency declarations
 
 ## Expected Output Format:
 \`\`\`json
 {
   "libsVersionsToml": "# Generated libs.versions.toml content",
+  "confidence": 0.9
+}
+\`\`\`
+
+Generate a focused libs.versions.toml file based on the current project's dependencies and ops_server patterns.
+`;
+  }
+
+  private createBuildGradleEnhancementPrompt(
+    filePath: string,
+    projectContext: AIGenerationContext,
+    opsServerPath: string
+  ): string {
+    const isRootBuild = filePath.endsWith('build.gradle') && !filePath.includes('/');
+    const isAppModule = filePath.includes('/app/') || filePath.includes('\\app\\');
+    
+    return `
+# Gradle Migration AI Assistant - build.gradle Enhancement
+
+## Task: Enhance ${filePath} for Version Catalog Migration
+
+You are enhancing a specific build.gradle file to work with TOML-based version catalogs.
+
+## Reference Context (ops_server)
+Please refer to the following files from the ops_server reference project at: ${opsServerPath}
+
+**REQUIRED REFERENCE FILES:**
+${isRootBuild ? `
+- \`${opsServerPath}/build.gradle\` - Root build.gradle reference
+- \`${opsServerPath}/buildSrc/\` - BuildSrc structure and conventions
+` : isAppModule ? `
+- \`${opsServerPath}/app/build.gradle\` - App module reference
+- \`${opsServerPath}/gradle/libs.versions.toml\` - For version catalog usage
+` : `
+- \`${opsServerPath}/*/build.gradle\` - Subproject build.gradle references
+- \`${opsServerPath}/gradle/libs.versions.toml\` - For version catalog usage
+`}
+
+## Current File Context:
+- File: ${filePath}
+- Project Type: ${projectContext.projectType}
+- Dependencies: ${projectContext.dependencies.join(', ')}
+- Custom Configurations: ${JSON.stringify(projectContext.customConfigurations)}
+
+## Instructions:
+1. **READ the appropriate ops_server build.gradle files** for reference patterns
+2. **REMOVE** repositories blocks, publishing configs, wrapper tasks
+3. **APPLY** common.lib plugin if it's a subproject
+4. **PRESERVE** existing dependency declarations (don't convert to libs.* yet)
+5. **FOLLOW** ops_server conventions for structure and organization
+
+## Expected Output Format:
+\`\`\`json
+{
   "buildGradleUpdates": {
-    "build.gradle": "# Updated build.gradle content",
-    "app/build.gradle": "# Updated app build.gradle content"
-  },
-  "buildSrcFiles": {
-    "buildSrc/src/main/kotlin/Dependencies.kt": "# Generated Dependencies.kt content"
+    "${filePath}": "# Enhanced build.gradle content"
   },
   "confidence": 0.9
 }
 \`\`\`
 
-Please generate intelligent, context-aware Gradle configuration following ops_server patterns.
+Generate an enhanced build.gradle file following ops_server patterns.
+`;
+  }
+
+  private createRootBuildGradlePrompt(
+    content: string,
+    projectContext: AIGenerationContext,
+    opsServerPath: string
+  ): string {
+    return `
+# Gradle Migration AI Assistant - Root build.gradle Processing
+
+## Task: Process Root build.gradle for Modern Gradle Structure
+
+You are modernizing a root build.gradle file to use buildSrc conventions and prepare for TOML-based version catalogs.
+
+## Reference Context (ops_server)
+Please refer to the following files from the ops_server reference project at: ${opsServerPath}
+
+**REQUIRED REFERENCE FILES:**
+- \`${opsServerPath}/build.gradle\` - Root build.gradle reference (should be minimal)
+- \`${opsServerPath}/buildSrc/\` - Complete buildSrc structure and files
+- \`${opsServerPath}/settings.gradle\` - Settings file reference
+- \`${opsServerPath}/*/build.gradle\` - Subproject references for distribution
+
+## Current Root build.gradle Content:
+\`\`\`gradle
+${content.substring(0, 1000)}${content.length > 1000 ? '\n...[truncated]' : ''}
+\`\`\`
+
+## Instructions:
+1. **READ ops_server buildSrc structure** to understand what should be moved there
+2. **EXTRACT** reusable logic to buildSrc files
+3. **DISTRIBUTE** allprojects/subprojects configurations to individual subprojects
+4. **REMOVE** repositories, publishing, wrapper tasks from root
+5. **GENERATE** appropriate buildSrc files following ops_server patterns
+
+## Expected Output Format:
+\`\`\`json
+{
+  "buildSrcFiles": {
+    "buildSrc/src/main/groovy/FileName.groovy": "# Generated buildSrc content"
+  },
+  "buildGradleUpdates": {
+    "subproject/build.gradle": "# Updated subproject content"
+  },
+  "confidence": 0.9
+}
+\`\`\`
+
+Generate buildSrc files and subproject updates following ops_server patterns.
 `;
   }
 
@@ -1091,13 +1109,23 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       this.channel.appendLine(`[transformationPlanner] 📝 Preparing to send prompt to Copilot for libs.versions.toml generation`);
       this.channel.appendLine(`[transformationPlanner] 🚀 Sending prompt to Copilot for libs.versions.toml generation...`);
       this.channel.appendLine(`[transformationPlanner] 🤖 Using AI-enhanced generation with ops_server context`);
-      const aiContent = await this.generateAIEnhancedContent(projectContext, referenceContext || {});
       
-      if (aiContent.confidence > 0.6 && aiContent.libsVersionsToml) {
-        this.channel.appendLine(`[transformationPlanner] ✓ AI generation successful (confidence: ${aiContent.confidence})`);
-        return aiContent.libsVersionsToml;
+      const opsServerPath = '.copilot/meta/ops_server';
+      const prompt = this.createLibsVersionsTomlPrompt(projectContext, opsServerPath);
+      
+      const result = await this.invokeAIGeneration(prompt);
+      
+      // Log the AI response
+      this.logAIResponse('libs.versions.toml generation', prompt, result.response);
+      
+      if (result && result.confidence > 0.6) {
+        const parsedResult = JSON.parse(result.response);
+        if (parsedResult.libsVersionsToml) {
+          this.channel.appendLine(`[transformationPlanner] ✓ AI generation successful (confidence: ${result.confidence})`);
+          return parsedResult.libsVersionsToml;
+        }
       } else {
-        this.channel.appendLine(`[transformationPlanner] ⚠️ AI generation confidence too low (${aiContent.confidence}), falling back to traditional generation`);
+        this.channel.appendLine(`[transformationPlanner] ⚠️ AI generation confidence too low (${result.confidence}), falling back to traditional generation`);
       }
     } catch (error) {
       this.channel.appendLine(`[transformationPlanner] ⚠️ AI generation failed, falling back to traditional generation: ${error}`);
@@ -1122,23 +1150,27 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       };
 
       // Create AI prompt for build.gradle enhancement
-      const prompt = this.createAIPrompt(projectContext, referenceContext);
+      const opsServerPath = '.copilot/meta/ops_server';
+      const prompt = this.createBuildGradleEnhancementPrompt(filePath, projectContext, opsServerPath);
       
       this.channel.appendLine(`[transformationPlanner] 📝 Preparing to send prompt to Copilot for build.gradle file: ${filePath}`);
       this.channel.appendLine(`[transformationPlanner] 🚀 Sending prompt to Copilot for build.gradle processing...`);
       
       // Attempt AI-enhanced generation
-      const aiResponse = await this.generateAIEnhancedContent(projectContext, referenceContext);
+      const result = await this.invokeAIGeneration(prompt);
       
       // Log AI response for build.gradle enhancement
-      this.logAIResponse(`build-gradle-enhancement-${path.basename(filePath, '.gradle')}`, prompt, aiResponse);
+      this.logAIResponse(`build-gradle-enhancement-${path.basename(filePath, '.gradle')}`, prompt, result.response);
       
-      if (aiResponse && aiResponse.confidence > 0.7 && aiResponse.buildGradleUpdates) {
-        // Use AI-generated content if available and confident
-        const aiContent = aiResponse.buildGradleUpdates[filePath] || aiResponse.buildGradleUpdates['build.gradle'];
-        if (aiContent) {
-          this.channel.appendLine(`[transformationPlanner] ✓ Using AI-enhanced build.gradle for ${filePath}`);
-          return aiContent;
+      if (result && result.confidence > 0.7) {
+        const parsedResult = JSON.parse(result.response);
+        if (parsedResult.buildGradleUpdates) {
+          // Use AI-generated content if available and confident
+          const aiContent = parsedResult.buildGradleUpdates[filePath] || parsedResult.buildGradleUpdates['build.gradle'];
+          if (aiContent) {
+            this.channel.appendLine(`[transformationPlanner] ✓ Using AI-enhanced build.gradle for ${filePath}`);
+            return aiContent;
+          }
         }
       }
 
@@ -1167,34 +1199,37 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       };
 
       // Create enhanced AI prompt specifically for root build.gradle cleanup
-      const prompt = this.createRootBuildGradlePrompt(content, projectContext, referenceContext);
+      const opsServerPath = '.copilot/meta/ops_server';
+      const prompt = this.createRootBuildGradlePrompt(content, projectContext, opsServerPath);
       
       // Attempt AI-enhanced processing
-      const aiResponse = await this.generateAIEnhancedContent(projectContext, referenceContext);
+      const result = await this.invokeAIGeneration(prompt);
       
       // Log AI response for root build.gradle processing
-      this.logAIResponse('root-build-gradle-processing', prompt, aiResponse);
+      this.logAIResponse('root-build-gradle-processing', prompt, result.response);
       
-      if (aiResponse && aiResponse.confidence > 0.6) {
+      if (result && result.confidence > 0.6) {
+        const parsedResult = JSON.parse(result.response);
+        
         // Process AI suggestions for buildSrc files
-        if (aiResponse.buildSrcFiles) {
-          for (const [fileName, fileContent] of Object.entries(aiResponse.buildSrcFiles)) {
+        if (parsedResult.buildSrcFiles) {
+          for (const [fileName, fileContent] of Object.entries(parsedResult.buildSrcFiles)) {
             const buildSrcFilePath = path.join(projectRoot, 'buildSrc', 'src', 'main', 'groovy', fileName);
             fs.mkdirSync(path.dirname(buildSrcFilePath), { recursive: true });
-            fs.writeFileSync(buildSrcFilePath, fileContent);
+            fs.writeFileSync(buildSrcFilePath, fileContent as string);
             this.channel.appendLine(`[transformationPlanner] ✓ Created buildSrc file: ${fileName}`);
           }
         }
 
         // Process AI suggestions for subproject build.gradle updates
-        if (aiResponse.buildGradleUpdates) {
-          for (const [subprojectPath, updatedContent] of Object.entries(aiResponse.buildGradleUpdates)) {
+        if (parsedResult.buildGradleUpdates) {
+          for (const [subprojectPath, updatedContent] of Object.entries(parsedResult.buildGradleUpdates)) {
             const fullSubprojectPath = path.join(projectRoot, subprojectPath, 'build.gradle');
             
             // Check if the subproject build.gradle exists
             if (fs.existsSync(fullSubprojectPath)) {
               try {
-                fs.writeFileSync(fullSubprojectPath, updatedContent);
+                fs.writeFileSync(fullSubprojectPath, updatedContent as string);
                 this.channel.appendLine(`[transformationPlanner] ✓ Updated subproject build.gradle: ${subprojectPath}/build.gradle`);
               } catch (writeError) {
                 this.channel.appendLine(`[transformationPlanner] ⚠️ Failed to update ${subprojectPath}/build.gradle: ${writeError}`);
@@ -1205,7 +1240,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
           }
         }
 
-        this.channel.appendLine(`[transformationPlanner] ✓ AI-processed root build.gradle with confidence: ${aiResponse.confidence}`);
+        this.channel.appendLine(`[transformationPlanner] ✓ AI-processed root build.gradle with confidence: ${result.confidence}`);
       } else {
         this.channel.appendLine(`[transformationPlanner] ⚠️ AI processing confidence too low, proceeding with deletion`);
       }
@@ -1215,78 +1250,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
     }
   }
 
-  private createRootBuildGradlePrompt(
-    content: string,
-    projectContext: AIGenerationContext,
-    referenceContext: any
-  ): string {
-    return `
-You are modernizing a Gradle project to use TOML-based version catalogs. 
 
-CRITICAL INSTRUCTIONS:
-1. REMOVE ALL unnecessary elements from root build.gradle:
-   - repositories blocks (these go to buildSrc)
-   - ext blocks (versions go to libs.versions.toml)
-   - nexus/artifactory publishing configurations
-   - gradle wrapper task definitions
-   - any plugin management that should be in buildSrc
-
-2. EXTRACT AND MOVE essential logic to buildSrc:
-   - Custom tasks that are reusable
-   - Common configurations
-   - Plugin application logic
-   - Repository definitions
-
-3. DISTRIBUTE allprojects/subprojects configurations:
-   - Identify any allprojects { } or subprojects { } blocks
-   - Extract configurations that should apply to individual subprojects
-   - Generate updates for each subproject's build.gradle file
-   - Include: group/version settings, plugin applications, common configurations
-   - Exclude: nexus/publishing configs (these should be removed entirely)
-   - Example: if allprojects has "group = rootProject.group", add this to each subproject
-
-4. REFER TO ops_server for best practices and patterns:
-   - Use ops_server as a reference for modern Gradle structure
-   - Think about how ops_server organizes buildSrc
-   - Consider ops_server's approach to plugin management
-   - See how ops_server handles subproject configurations
-
-5. MODERNIZATION CONTEXT:
-   - We are modernizing to TOML-based version catalog model
-   - Dependencies should reference libs.versions.toml
-   - Plugins should be managed through buildSrc
-   - Root build.gradle should be minimal or empty
-   - Each subproject should have its own clean build.gradle
-
-CURRENT ROOT BUILD.GRADLE CONTENT:
-${content}
-
-PROJECT CONTEXT:
-- Project Type: ${projectContext.projectType}
-- Dependencies: ${projectContext.dependencies.join(', ')}
-- Build Patterns: ${projectContext.buildPatterns.join(', ')}
-
-REFERENCE CONTEXT (ops_server):
-${JSON.stringify(referenceContext, null, 2)}
-
-Please analyze the root build.gradle and:
-1. Identify what should be moved to buildSrc
-2. Identify what should be deleted
-3. Identify allprojects/subprojects configurations to distribute
-4. Generate appropriate buildSrc files for essential logic
-5. Generate buildGradleUpdates for each subproject that needs allprojects configurations
-6. Ensure the modernization follows TOML-based version catalog patterns
-
-IMPORTANT: Return a JSON response with:
-{
-  "analysis": "your analysis of what was found and what actions to take",
-  "buildSrcFiles": { "path/to/file.gradle": "content" },
-  "buildGradleUpdates": { "subproject/build.gradle": "configurations to add" },
-  "deletions": ["list of things to delete from root"],
-  "confidence": 0.8
-}
-`;
-  }
 
   private extractDependenciesFromContent(content: string): string[] {
     const dependencies: string[] = [];
