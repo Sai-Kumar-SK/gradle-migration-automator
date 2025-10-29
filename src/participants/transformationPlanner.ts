@@ -646,18 +646,26 @@ Generate buildSrc files and subproject updates following ops_server patterns.
 
   private async selectPreferredModel(): Promise<vscode.LanguageModelChat | null> {
     try {
+      this.channel.appendLine(`[transformationPlanner] 🔍 Starting model selection process...`);
+      
       if (!vscode.lm) {
+        this.channel.appendLine(`[transformationPlanner] ❌ VS Code Language Model API not available`);
         return null;
       }
+      this.channel.appendLine(`[transformationPlanner] ✓ VS Code Language Model API is available`);
 
+      this.channel.appendLine(`[transformationPlanner] 🔍 Querying available models...`);
       const models = await vscode.lm.selectChatModels();
+      this.channel.appendLine(`[transformationPlanner] 📊 Found ${models.length} available models`);
+      
       if (models.length === 0) {
+        this.channel.appendLine(`[transformationPlanner] ❌ No language models available`);
         return null;
       }
 
       // Log available models for user reference (only once)
       if (!this.modelsLogged) {
-        this.channel.appendLine(`[transformationPlanner] Available models:`);
+        this.channel.appendLine(`[transformationPlanner] 📋 Available models:`);
         models.forEach((model, index) => {
           const isGPT41 = model.id.includes('gpt-4.1') || model.name.toLowerCase().includes('gpt4.1');
           const isGPT4o = model.id.includes('gpt-4o') || model.name.toLowerCase().includes('gpt4o');
@@ -670,6 +678,7 @@ Generate buildSrc files and subproject updates following ops_server patterns.
 
       // Check if user has set a preferred model
       if (this.preferredModelId) {
+        this.channel.appendLine(`[transformationPlanner] 🎯 Looking for user-preferred model: ${this.preferredModelId}`);
         const preferredId = this.preferredModelId; // TypeScript null check
         const userPreferredModel = models.find(model => 
           model.id.includes(preferredId) || 
@@ -679,17 +688,19 @@ Generate buildSrc files and subproject updates following ops_server patterns.
           const isGPT41 = userPreferredModel.id.includes('gpt-4.1') || userPreferredModel.name.toLowerCase().includes('gpt4.1');
           const isGPT4o = userPreferredModel.id.includes('gpt-4o') || userPreferredModel.name.toLowerCase().includes('gpt4o');
           const version = isGPT41 || isGPT4o ? 'GPT-4.1' : 'GPT-4.0';
-          this.channel.appendLine(`[transformationPlanner] ✓ Using user-preferred model: ${userPreferredModel.name} (${version})`);
+          this.channel.appendLine(`[transformationPlanner] ✓ Found user-preferred model: ${userPreferredModel.name} (${version})`);
           return userPreferredModel;
         } else {
-          this.channel.appendLine(`[transformationPlanner] ⚠️ Preferred model '${this.preferredModelId}' not found, falling back to auto-selection`);
+          this.channel.appendLine(`[transformationPlanner] ❌ Preferred model '${this.preferredModelId}' not found, falling back to auto-selection`);
         }
       }
 
       // Priority order: gpt-4.1 > gpt-4o (4.1) > gpt-4 (4.0) > any available model
       const modelPreferences = ['gpt-4.1', 'gpt-4o', 'gpt-4', 'copilot-gpt-4', 'copilot-gpt-3.5-turbo'];
+      this.channel.appendLine(`[transformationPlanner] 🔄 Auto-selecting from preferences: ${modelPreferences.join(', ')}`);
       
       for (const preferredModel of modelPreferences) {
+        this.channel.appendLine(`[transformationPlanner] 🔍 Looking for models matching: ${preferredModel}`);
         const selectedModel = models.find(model => 
           model.id.includes(preferredModel) || 
           model.name.toLowerCase().includes(preferredModel.replace('-', ''))
@@ -698,18 +709,21 @@ Generate buildSrc files and subproject updates following ops_server patterns.
           const isGPT41 = selectedModel.id.includes('gpt-4.1') || selectedModel.name.toLowerCase().includes('gpt4.1');
           const isGPT4o = selectedModel.id.includes('gpt-4o') || selectedModel.name.toLowerCase().includes('gpt4o');
           const version = isGPT41 || isGPT4o ? 'GPT-4.1' : 'GPT-4.0';
-          this.channel.appendLine(`[transformationPlanner] ✓ Auto-selected: ${selectedModel.name} (${version})`);
+          this.channel.appendLine(`[transformationPlanner] ✓ Found matching model for '${preferredModel}': ${selectedModel.name} (${version})`);
           return selectedModel;
+        } else {
+          this.channel.appendLine(`[transformationPlanner] ❌ No models found matching: ${preferredModel}`);
         }
       }
 
       // Fallback to first available model
       const fallbackModel = models[0];
-      this.channel.appendLine(`[transformationPlanner] ⚠️ Using fallback model: ${fallbackModel.name}`);
+      this.channel.appendLine(`[transformationPlanner] ⚠️ Using fallback model: ${fallbackModel.name} [ID: ${fallbackModel.id}]`);
       return fallbackModel;
 
     } catch (error) {
-      this.channel.appendLine(`[transformationPlanner] Error selecting model: ${error}`);
+      this.channel.appendLine(`[transformationPlanner] ❌ Error selecting model: ${error}`);
+      this.channel.appendLine(`[transformationPlanner] ❌ Error stack: ${error instanceof Error ? error.stack : 'No stack trace'}`);
       return null;
     }
   }
@@ -752,43 +766,54 @@ Generate buildSrc files and subproject updates following ops_server patterns.
 
   private async invokeCopilotChatAPI(prompt: string): Promise<any | null> {
     try {
+      this.channel.appendLine(`[transformationPlanner] 🔍 Starting AI request with prompt length: ${prompt.length}`);
+      
       // Use VS Code's Language Model API to interact with Copilot models
       // Prefer GPT-4.1 (gpt-4o) over GPT-4.0 (gpt-4) when available
       
       // Check if language models are available
       if (!vscode.lm) {
-        this.channel.appendLine(`[transformationPlanner] VS Code Language Model API not available`);
+        this.channel.appendLine(`[transformationPlanner] ❌ VS Code Language Model API not available`);
         return null;
       }
+      this.channel.appendLine(`[transformationPlanner] ✓ VS Code Language Model API is available`);
 
       // Select the preferred model (prioritizing GPT-4.1)
       const selectedModel = await this.selectPreferredModel();
       if (!selectedModel) {
-        this.channel.appendLine(`[transformationPlanner] No language models available`);
+        this.channel.appendLine(`[transformationPlanner] ❌ No language models available from selectPreferredModel()`);
         return null;
       }
+      this.channel.appendLine(`[transformationPlanner] ✓ Selected model: ${selectedModel.name} (ID: ${selectedModel.id})`);
 
       // Create chat request with the selected model
       const messages: vscode.LanguageModelChatMessage[] = [
         vscode.LanguageModelChatMessage.User(prompt)
       ];
+      this.channel.appendLine(`[transformationPlanner] ✓ Created chat messages array with ${messages.length} message(s)`);
 
       this.channel.appendLine(`[transformationPlanner] 🤖 Sending request to ${selectedModel.name}...`);
       
       // Send request to the language model
       const request = await selectedModel.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+      this.channel.appendLine(`[transformationPlanner] ✓ Request sent successfully, processing response stream...`);
       
       let response = '';
+      let fragmentCount = 0;
       for await (const fragment of request.text) {
         response += fragment;
+        fragmentCount++;
       }
+      this.channel.appendLine(`[transformationPlanner] ✓ Processed ${fragmentCount} response fragments, total length: ${response.length}`);
 
       if (response.trim()) {
-        this.channel.appendLine(`[transformationPlanner] ✓ Received response from ${selectedModel.name} (${response.length} characters)`);
+        this.channel.appendLine(`[transformationPlanner] ✓ Received non-empty response from ${selectedModel.name} (${response.length} characters)`);
+        this.channel.appendLine(`[transformationPlanner] 📝 Response preview: ${response.substring(0, 200)}${response.length > 200 ? '...' : ''}`);
         
         // Try to parse as JSON for structured responses
         try {
           const jsonResponse = JSON.parse(response);
+          this.channel.appendLine(`[transformationPlanner] ✓ Successfully parsed response as JSON`);
           return {
             content: jsonResponse,
             model: selectedModel.name,
@@ -796,18 +821,23 @@ Generate buildSrc files and subproject updates following ops_server patterns.
           };
         } catch {
           // If not JSON, return as text content
+          this.channel.appendLine(`[transformationPlanner] ✓ Response is not JSON, returning as text content`);
           return {
             content: response,
             model: selectedModel.name,
             confidence: 0.8
           };
         }
+      } else {
+        this.channel.appendLine(`[transformationPlanner] ❌ Received empty response from ${selectedModel.name}`);
       }
 
+      this.channel.appendLine(`[transformationPlanner] ❌ Returning null - no valid response received`);
       return null;
 
     } catch (error) {
-      this.channel.appendLine(`[transformationPlanner] Copilot Chat API error: ${error}`);
+      this.channel.appendLine(`[transformationPlanner] ❌ Copilot Chat API error: ${error}`);
+      this.channel.appendLine(`[transformationPlanner] ❌ Error stack: ${error instanceof Error ? error.stack : 'No stack trace'}`);
       return null;
     }
   }
