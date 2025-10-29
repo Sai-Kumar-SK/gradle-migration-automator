@@ -293,6 +293,7 @@ function buildToml(
 
 export class TransformationPlanner {
   private preferredModelId?: string; // Allow explicit model selection
+  private modelsLogged: boolean = false; // Track if models have been logged
 
   constructor(
     private channel: vscode.OutputChannel, 
@@ -477,11 +478,21 @@ export class TransformationPlanner {
       // Use Copilot's AI capabilities for intelligent generation
       const aiResponse = await this.invokeAIGeneration(prompt);
       
+      // Log AI response for debugging
+      this.logAIResponse('libs-versions-toml-generation', prompt, aiResponse);
+      
+      // Handle different response structures from real AI vs fallback
+      let content = aiResponse;
+      if (aiResponse.content) {
+        // Real AI response has content field
+        content = aiResponse.content;
+      }
+      
       return {
-        buildSrcFiles: aiResponse.buildSrcFiles || {},
-        libsVersionsToml: aiResponse.libsVersionsToml || '',
-        buildGradleUpdates: aiResponse.buildGradleUpdates || {},
-        confidence: aiResponse.confidence || 0.7
+        buildSrcFiles: content.buildSrcFiles || aiResponse.buildSrcFiles || {},
+        libsVersionsToml: content.libsVersionsToml || aiResponse.libsVersionsToml || '',
+        buildGradleUpdates: content.buildGradleUpdates || aiResponse.buildGradleUpdates || {},
+        confidence: aiResponse.confidence || content.confidence || 0.7
       };
     } catch (error) {
       this.channel.appendLine(`[transformationPlanner] ⚠️ AI generation failed: ${error}`);
@@ -626,14 +637,17 @@ Please generate intelligent, context-aware Gradle configuration following ops_se
         return null;
       }
 
-      // Log available models for user reference
-      this.channel.appendLine(`[transformationPlanner] Available models:`);
-      models.forEach((model, index) => {
-        const isGPT4o = model.id.includes('gpt-4o') || model.name.toLowerCase().includes('gpt4o');
-        const isGPT4 = model.id.includes('gpt-4') || model.name.toLowerCase().includes('gpt4');
-        const version = isGPT4o ? '(GPT-4.1)' : isGPT4 ? '(GPT-4.0)' : '';
-        this.channel.appendLine(`[transformationPlanner]   ${index + 1}. ${model.name} ${version} - ${model.id}`);
-      });
+      // Log available models for user reference (only once)
+      if (!this.modelsLogged) {
+        this.channel.appendLine(`[transformationPlanner] Available models:`);
+        models.forEach((model, index) => {
+          const isGPT4o = model.id.includes('gpt-4o') || model.name.toLowerCase().includes('gpt4o');
+          const isGPT4 = model.id.includes('gpt-4') || model.name.toLowerCase().includes('gpt4');
+          const version = isGPT4o ? '(GPT-4.1)' : isGPT4 ? '(GPT-4.0)' : '';
+          this.channel.appendLine(`[transformationPlanner]   ${index + 1}. ${model.name} ${version} - ${model.id}`);
+        });
+        this.modelsLogged = true;
+      }
 
       // Check if user has set a preferred model
       if (this.preferredModelId) {
@@ -676,6 +690,42 @@ Please generate intelligent, context-aware Gradle configuration following ops_se
     } catch (error) {
       this.channel.appendLine(`[transformationPlanner] Error selecting model: ${error}`);
       return null;
+    }
+  }
+
+  private logAIResponse(operation: string, prompt: string, response: any): void {
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `ai-response-${operation}-${timestamp}.txt`;
+      const filepath = path.join(this.metaDir, filename);
+      
+      const confidence = response?.confidence || response?.content?.confidence || 'unknown';
+      
+      // Format as human-readable text
+      const logContent = [
+        '='.repeat(80),
+        `AI RESPONSE LOG - ${operation.toUpperCase()}`,
+        '='.repeat(80),
+        `Timestamp: ${new Date().toISOString()}`,
+        `Operation: ${operation}`,
+        `Confidence: ${confidence}`,
+        '',
+        'PROMPT:',
+        '-'.repeat(40),
+        prompt.length > 2000 ? prompt.substring(0, 2000) + '\n...[truncated - prompt too long]' : prompt,
+        '',
+        'RESPONSE:',
+        '-'.repeat(40),
+        typeof response === 'string' ? response : JSON.stringify(response, null, 2),
+        '',
+        '='.repeat(80),
+        ''
+      ].join('\n');
+      
+      fs.writeFileSync(filepath, logContent);
+      this.channel.appendLine(`[transformationPlanner] 📝 AI response logged to ${filename}`);
+    } catch (error) {
+      this.channel.appendLine(`[transformationPlanner] ⚠️ Failed to log AI response: ${error}`);
     }
   }
 
@@ -1080,6 +1130,9 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       // Attempt AI-enhanced generation
       const aiResponse = await this.generateAIEnhancedContent(projectContext, referenceContext);
       
+      // Log AI response for build.gradle enhancement
+      this.logAIResponse(`build-gradle-enhancement-${path.basename(filePath, '.gradle')}`, prompt, aiResponse);
+      
       if (aiResponse && aiResponse.confidence > 0.7 && aiResponse.buildGradleUpdates) {
         // Use AI-generated content if available and confident
         const aiContent = aiResponse.buildGradleUpdates[filePath] || aiResponse.buildGradleUpdates['build.gradle'];
@@ -1118,6 +1171,9 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       
       // Attempt AI-enhanced processing
       const aiResponse = await this.generateAIEnhancedContent(projectContext, referenceContext);
+      
+      // Log AI response for root build.gradle processing
+      this.logAIResponse('root-build-gradle-processing', prompt, aiResponse);
       
       if (aiResponse && aiResponse.confidence > 0.6) {
         // Process AI suggestions for buildSrc files
@@ -1469,10 +1525,23 @@ IMPORTANT: Return a JSON response with:
       this.channel.appendLine(`[transformationPlanner] ⚠ Warning: .copilot/meta/buildSrc not found, skipping buildSrc scaffolding`)
     }
 
+    // Step 2.5: Write Copilot guidance early in the process
+    this.channel.appendLine(`[transformationPlanner] Step 2.5: Writing Copilot guidance`)
+    this.writeCopilotGuidance()
+
     // Step 3: Generate gradle/libs.versions.toml
     this.channel.appendLine(`[transformationPlanner] Step 3: Generating libs.versions.toml`)
     const buildFiles = this.findAllBuildGradleFiles(projectRoot)
-    const allText = buildFiles.map(p => fs.readFileSync(p, 'utf-8')).join('\n\n')
+    let allText = buildFiles.map(p => fs.readFileSync(p, 'utf-8')).join('\n\n')
+    
+    // Include versions.gradle content if it exists
+    const versionsGradlePath = path.join(projectRoot, 'versions.gradle')
+    if (fs.existsSync(versionsGradlePath)) {
+      const versionsContent = fs.readFileSync(versionsGradlePath, 'utf-8')
+      allText += '\n\n' + versionsContent
+      this.channel.appendLine(`[transformationPlanner] ✓ Including versions.gradle content in libs.versions.toml generation`)
+    }
+    
     const versions = extractVersionsFromExt(allText)
     const deps = extractDependencies(allText)
     const toml = await this.buildTomlWithAI(versions, deps, referenceContext)
@@ -1511,7 +1580,6 @@ IMPORTANT: Return a JSON response with:
     }
 
     // Mark versions.gradle for deletion at the end if it exists
-    const versionsGradlePath = path.join(projectRoot, 'versions.gradle')
     if (fs.existsSync(versionsGradlePath)) {
       filesToDelete.push(versionsGradlePath)
     }
@@ -1534,9 +1602,8 @@ IMPORTANT: Return a JSON response with:
       }
     }
 
-    // Step 6 & 7: Write Copilot guidance for custom files and nexus cleanup
-    this.channel.appendLine(`[transformationPlanner] Step 6-7: Writing Copilot guidance`)
-    this.writeCopilotGuidance()
+    // Step 6 & 7: Validate buildSrc templates (copilot guidance already written in step 2.5)
+    this.channel.appendLine(`[transformationPlanner] Step 6-7: Validating buildSrc templates`)
     this.validateBuildSrcTemplates([], filesChanged)
     
     // Validate the migration results
@@ -1562,9 +1629,69 @@ IMPORTANT: Return a JSON response with:
 
   // Keep the old method for backward compatibility but mark it as deprecated
   async generatePatches(parse: GradleParseOutput, projectRoot: string): Promise<{ patchText: string; filesChanged: string[]; riskSummary: string }>{
-    this.channel.appendLine(`[transformationPlanner] Warning: generatePatches is deprecated. Use executeStepByStepMigration instead.`)
+    this.channel.appendLine(`[transformationPlanner] Generating unified diff patches for migration changes`)
+    
+    // Store original file contents before migration
+    const originalContents: Record<string, string> = {}
+    const filesToTrack = [
+      'settings.gradle',
+      'gradle/libs.versions.toml',
+      'gradle/wrapper/gradle-wrapper.properties',
+      'build.gradle',
+      'versions.gradle'
+    ]
+    
+    // Find all build.gradle files to track
+    const buildFiles = this.findAllBuildGradleFiles(projectRoot)
+    for (const buildFile of buildFiles) {
+      const relativePath = path.relative(projectRoot, buildFile)
+      filesToTrack.push(relativePath)
+    }
+    
+    // Store original contents
+    for (const relPath of filesToTrack) {
+      const absPath = path.join(projectRoot, relPath)
+      if (fs.existsSync(absPath)) {
+        originalContents[relPath] = fs.readFileSync(absPath, 'utf-8')
+      }
+    }
+    
+    // Execute the migration
     const result = await this.executeStepByStepMigration(parse, projectRoot)
-    return { patchText: '', filesChanged: result.filesChanged, riskSummary: result.riskSummary }
+    
+    // Generate unified diffs for changed files
+    const diffs: string[] = []
+    
+    for (const changedFile of result.filesChanged) {
+      const absPath = path.join(projectRoot, changedFile)
+      
+      if (originalContents[changedFile]) {
+        // File was modified
+        if (fs.existsSync(absPath)) {
+          const newContent = fs.readFileSync(absPath, 'utf-8')
+          const diff = generateUnifiedDiff(originalContents[changedFile], newContent, changedFile)
+          if (diff.trim()) {
+            diffs.push(diff)
+          }
+        } else {
+          // File was deleted
+          const diff = generateDeleteFileDiff(changedFile, originalContents[changedFile])
+          diffs.push(diff)
+        }
+      } else {
+        // File was added
+        if (fs.existsSync(absPath)) {
+          const newContent = fs.readFileSync(absPath, 'utf-8')
+          const diff = generateAddFileDiff(changedFile, newContent)
+          diffs.push(diff)
+        }
+      }
+    }
+    
+    const patchText = diffs.join('\n')
+    this.channel.appendLine(`[transformationPlanner] Generated ${diffs.length} unified diffs for ${result.filesChanged.length} changed files`)
+    
+    return { patchText, filesChanged: result.filesChanged, riskSummary: result.riskSummary }
   }
 
   private writeCopilotGuidance(): void {
@@ -1615,18 +1742,16 @@ IMPORTANT: Return a JSON response with:
         'Copy the entire buildSrc folder (including settings.gradle, build.gradle and common.lib.gradle) from .copilot/meta/buildSrc into this repo, overwriting any existing files.',
         '',
         '## Handle Custom Gradle Files (Step 6):',
-        'See detailed instructions in: .copilot/meta/custom-gradle-files-prompt.md',
+        'Review and manually handle any custom gradle files as needed.',
         '',
         '## Remove Nexus URLs and Related Configs (Step 7):',
-        'See detailed instructions in: .copilot/meta/nexus-cleanup-prompt.md',
+        'Review and manually remove any nexus-related configurations as needed.',
       ].join('\n')
       const outPath = path.join(this.metaDir, 'copilot-guidance.md')
       fs.writeFileSync(outPath, guidance)
       this.channel.appendLine(`[transformationPlanner] Wrote strict guidance: ${outPath}`)
 
-      // Write detailed prompt files for steps 6 and 7
-      this.writeCustomGradleFilesPrompt()
-      this.writeNexusCleanupPrompt()
+      // Note: Removed unnecessary prompt files for steps 6 and 7
       
       // Ensure copilot.md is available in target project
       this.ensureCopilotInstructions()
@@ -1653,139 +1778,9 @@ IMPORTANT: Return a JSON response with:
     }
   }
 
-  private writeCustomGradleFilesPrompt(): void {
-    try {
-      const prompt = [
-        '# Custom Gradle Files Migration Prompt',
-        '',
-        '## Objective',
-        'Intelligently handle custom gradle files (publish.gradle, compilation.gradle, dependencies.gradle, versions.gradle, etc.) during Gradle migration by preserving essential build logic while removing outdated patterns.',
-        '',
-        '## Instructions',
-        '',
-        '### 1. Discovery Phase',
-        'Search the entire project for custom gradle files with these patterns:',
-        '- `*.gradle` files that are NOT `build.gradle` or `settings.gradle`',
-        '- Common names: `publish.gradle`, `compilation.gradle`, `dependencies.gradle`, `versions.gradle`, `common.gradle`, `plugins.gradle`',
-        '- Look in both root directory and all subdirectories',
-        '',
-        '### 2. Analysis Phase',
-        'For each custom gradle file found, categorize the content:',
-        '',
-        '**Essential Logic (PRESERVE):**',
-        '- Dependency declarations (`implementation`, `testImplementation`, etc.)',
-        '- Plugin applications and configurations',
-        '- Custom build tasks and task configurations',
-        '- Source set definitions',
-        '- Compiler options and build configurations',
-        '- Test configurations',
-        '- JAR/WAR packaging configurations',
-        '',
-        '**Outdated Logic (DISCARD):**',
-        '- Repository blocks (will be handled by buildSrc)',
-        '- Nexus URL configurations',
-        '- Old-style plugin applications (`apply plugin:`)',
-        '- ext.* variable definitions that duplicate libs.versions.toml',
-        '- buildscript blocks',
-        '- Legacy wrapper configurations',
-        '',
-        '### 3. Migration Phase',
-        'For files with essential logic:',
-        '1. **Extract and merge** essential parts into the appropriate `build.gradle` file',
-        '2. **Convert references**: Change `ext.someVersion` to `libs.versions.someVersion`',
-        '3. **Update syntax**: Convert old-style to new-style where applicable',
-        '4. **Avoid duplicates**: Don\'t add configurations that already exist in target build.gradle',
-        '',
-        '### 4. Cleanup Phase',
-        'After processing each file:',
-        '- **Delete the custom gradle file** (regardless of whether content was preserved)',
-        '- **Update any references** to the deleted file in other gradle files',
-        '- **Log the action** taken for each file',
-        '',
-        '## Success Criteria',
-        '- All custom gradle files are processed and deleted',
-        '- Essential build logic is preserved in appropriate build.gradle files',
-        '- No broken references remain',
-        '- Build functionality is maintained',
-        '- Project uses only standard gradle file structure'
-      ].join('\n')
-      
-      const outPath = path.join(this.metaDir, 'custom-gradle-files-prompt.md')
-      fs.writeFileSync(outPath, prompt)
-      this.channel.appendLine(`[transformationPlanner] Wrote custom gradle files prompt: ${outPath}`)
-    } catch {}
-  }
 
-  private writeNexusCleanupPrompt(): void {
-    try {
-      const prompt = [
-        '# Nexus URLs and Repository Cleanup Prompt',
-        '',
-        '## Objective',
-        'Remove all internal nexus repository configurations and related legacy settings from Gradle build files while preserving legitimate external repositories.',
-        '',
-        '## Instructions',
-        '',
-        '### 1. Discovery Phase',
-        'Search through ALL gradle files in the project:',
-        '- Root `build.gradle` (if it exists)',
-        '- All subproject `build.gradle` files',
-        '- Any remaining custom gradle files',
-        '- `settings.gradle` files',
-        '',
-        '### 2. Target Patterns to Remove',
-        '',
-        '**Repository Blocks with Nexus URLs:**',
-        '```gradle',
-        'repositories {',
-        '    maven {',
-        '        url "http://nexus.company.com/repository/maven-public/"',
-        '        // or https://nexus.internal.com/...',
-        '        // or any internal nexus server',
-        '    }',
-        '}',
-        '```',
-        '',
-        '**ext.* Variables for Nexus:**',
-        '```gradle',
-        'ext {',
-        '    nexusUrl = "http://nexus.company.com"',
-        '    nexusUsername = "..."',
-        '    nexusPassword = "..."',
-        '}',
-        '```',
-        '',
-        '### 3. Patterns to PRESERVE',
-        '',
-        '**Standard Public Repositories:**',
-        '```gradle',
-        'repositories {',
-        '    mavenCentral()',
-        '    gradlePluginPortal()',
-        '    google()',
-        '}',
-        '```',
-        '',
-        '### 4. Common Nexus URL Patterns',
-        'Look for these patterns in URLs:',
-        '- `nexus.company.com`',
-        '- `nexus.internal.com`',
-        '- `artifactory.company.com`',
-        '- Any URL with internal domain names',
-        '- URLs starting with `http://` (often internal)',
-        '',
-        '## Success Criteria',
-        '- All internal nexus repository configurations removed',
-        '- All related ext.* variables removed',
-        '- Legitimate external repositories preserved',
-        '- Build functionality maintained through buildSrc configuration'
-      ].join('\n')
-      
-      const outPath = path.join(this.metaDir, 'nexus-cleanup-prompt.md')
-      fs.writeFileSync(outPath, prompt)
-      this.channel.appendLine(`[transformationPlanner] Wrote nexus cleanup prompt: ${outPath}`)
-    } catch {}
-  }
+
+
 
   private copyBuildSrcFromMeta(metaBuildSrcPath: string, projectBuildSrcPath: string, projectRoot: string, diffs: string[], filesChanged: string[]): void {
     const copyRecursively = (srcDir: string, destDir: string, relativeBase: string = '') => {
@@ -1973,13 +1968,7 @@ IMPORTANT: Return a JSON response with:
         validationResults.push('❌ Root build.gradle still exists')
       }
       
-      // Check if copilot.md is available
-      const copilotMdPath = path.join(this.metaDir, 'copilot.md')
-      if (fs.existsSync(copilotMdPath)) {
-        validationResults.push('✅ copilot.md instructions available')
-      } else {
-        validationResults.push('❌ copilot.md instructions missing')
-      }
+      // Note: copilot.md validation removed as it's not essential for migration success
       
       // Log all validation results
       this.channel.appendLine(`[transformationPlanner] Validation Results:`)

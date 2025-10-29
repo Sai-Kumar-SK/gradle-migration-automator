@@ -297,19 +297,40 @@ export async function activate(context: vscode.ExtensionContext) {
       channel.appendLine(`[MIGRATION] Step 3 completed: patches.diff written to ${patchPath}`);
       telemetry.info('planner_generate_done', { patchPath, filesChanged: planResult.filesChanged.length, riskSummary: planResult.riskSummary });
 
-      // 4) gitAgent: apply patch, commit, and push
-      channel.appendLine('[MIGRATION] Step 4: Starting gitAgent apply, commit, and push...');
-      vscode.window.showInformationMessage('gitAgent: Applying patches, committing, and pushing...');
-      telemetry.info('gitAgent_commit_start', { patchPath });
-      
-      const commitRes = await gitAgent.applyCommitAndPush({ patchPath, commitMessage });
-      channel.appendLine(`[MIGRATION] Step 4 completed: Changes committed and pushed`);
-      telemetry.info('gitAgent_commit_done', commitRes);
-
-      // Summary
-      const summary = `Migration complete.\nRepo: ${gitResult.repo}\nBranch: ${gitResult.branch}\nFiles changed: ${planResult.filesChanged.join(', ') || 'None'}\nRisk scores: ${planResult.riskSummary}\nNext steps: Run Gradle tasks in VS Code terminal (e.g., ./gradlew build).`;
+      // 4) Ask user to review and commit changes
+      channel.appendLine('[MIGRATION] Step 4: Migration changes ready for review');
+      const summary = `Migration complete.\nRepo: ${gitResult.repo}\nBranch: ${gitResult.branch}\nFiles changed: ${planResult.filesChanged.join(', ') || 'None'}\nRisk scores: ${planResult.riskSummary}\nPatches: ${patchPath}\n\nNext steps:\n1. Review the changes in your working directory\n2. Test the migration (e.g., ./gradlew build)\n3. Commit and push when ready`;
       channel.appendLine(summary);
-      vscode.window.showInformationMessage('Gradle Migration Automator: Migration complete. Check output channel for summary.');
+      
+      // Show user options for next steps
+      const action = await vscode.window.showInformationMessage(
+        'Gradle Migration complete! Files have been modified in your working directory.',
+        'Review Changes',
+        'Apply Patches',
+        'Open Terminal'
+      );
+      
+      if (action === 'Review Changes') {
+        // Open the Source Control view to show changes
+        vscode.commands.executeCommand('workbench.view.scm');
+      } else if (action === 'Apply Patches') {
+        // Apply patches using git apply
+        try {
+          channel.appendLine('[MIGRATION] Applying patches via git apply...');
+          telemetry.info('gitAgent_commit_start', { patchPath });
+          const commitRes = await gitAgent.applyCommitAndPush({ patchPath, commitMessage });
+          channel.appendLine(`[MIGRATION] Patches applied and changes committed`);
+          telemetry.info('gitAgent_commit_done', commitRes);
+          vscode.window.showInformationMessage('Migration patches applied and committed successfully!');
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          channel.appendLine(`[MIGRATION] Error applying patches: ${errorMsg}`);
+          vscode.window.showErrorMessage(`Failed to apply patches: ${errorMsg}`);
+        }
+      } else if (action === 'Open Terminal') {
+        // Open terminal for manual testing
+        vscode.commands.executeCommand('workbench.action.terminal.new');
+      }
     } catch (err) {
       telemetry.error('workflow_error', err);
       const message = err instanceof Error ? err.message : String(err);
@@ -358,14 +379,40 @@ async function resumeMigrationFromStep2(migrationState: any, channel: vscode.Out
     channel.appendLine(`[MIGRATION] Step 3 completed: patches.diff written to ${patchPath}`);
     telemetry.info('planner_generate_done_resumed', { patchPath, filesChanged: planResult.filesChanged.length, riskSummary: planResult.riskSummary });
 
-    // 4) gitAgent: apply patch, commit, and push
-    channel.appendLine('[MIGRATION] Step 4: Starting gitAgent apply, commit, and push...');
-    vscode.window.showInformationMessage('gitAgent: Applying patches, committing, and pushing...');
-    telemetry.info('gitAgent_commit_start_resumed', { patchPath });
+    // 4) Ask user to review and commit changes
+    channel.appendLine('[MIGRATION] Step 4: Migration changes ready for review');
+    const summary = `Migration complete.\nFiles changed: ${planResult.filesChanged.join(', ') || 'None'}\nRisk scores: ${planResult.riskSummary}\nPatches: ${patchPath}\n\nNext steps:\n1. Review the changes in your working directory\n2. Test the migration (e.g., ./gradlew build)\n3. Commit and push when ready`;
+    channel.appendLine(summary);
     
-    const commitRes = await gitAgent.applyCommitAndPush({ patchPath, commitMessage });
-    channel.appendLine(`[MIGRATION] Step 4 completed: Changes committed and pushed`);
-    telemetry.info('gitAgent_commit_done_resumed', commitRes);
+    // Show user options for next steps
+    const action = await vscode.window.showInformationMessage(
+      'Gradle Migration complete! Files have been modified in your working directory.',
+      'Review Changes',
+      'Apply Patches',
+      'Open Terminal'
+    );
+    
+    if (action === 'Review Changes') {
+      // Open the Source Control view to show changes
+      vscode.commands.executeCommand('workbench.view.scm');
+    } else if (action === 'Apply Patches') {
+      // Apply patches using git apply
+      try {
+        channel.appendLine('[MIGRATION] Applying patches via git apply...');
+        telemetry.info('gitAgent_commit_start_resumed', { patchPath });
+        const commitRes = await gitAgent.applyCommitAndPush({ patchPath, commitMessage });
+        channel.appendLine(`[MIGRATION] Patches applied and changes committed`);
+        telemetry.info('gitAgent_commit_done_resumed', commitRes);
+        vscode.window.showInformationMessage('Migration patches applied and committed successfully!');
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        channel.appendLine(`[MIGRATION] Error applying patches: ${errorMsg}`);
+        vscode.window.showErrorMessage(`Failed to apply patches: ${errorMsg}`);
+      }
+    } else if (action === 'Open Terminal') {
+      // Open terminal for manual testing
+      vscode.commands.executeCommand('workbench.action.terminal.new');
+    }
 
     // Clean up state file
     const stateFile = path.join(metaDir, 'migration-state.json');
@@ -375,8 +422,8 @@ async function resumeMigrationFromStep2(migrationState: any, channel: vscode.Out
     } catch {}
 
     // Summary
-    const summary = `Migration complete (resumed).\nWorkspace: ${workspacePath}\nFiles changed: ${planResult.filesChanged.join(', ') || 'None'}\nRisk scores: ${planResult.riskSummary}\nNext steps: Run Gradle tasks in VS Code terminal (e.g., ./gradlew build).`;
-    channel.appendLine(summary);
+    const resumeSummary = `Migration complete (resumed).\nWorkspace: ${workspacePath}\nFiles changed: ${planResult.filesChanged.join(', ') || 'None'}\nRisk scores: ${planResult.riskSummary}\nNext steps: Run Gradle tasks in VS Code terminal (e.g., ./gradlew build).`;
+    channel.appendLine(resumeSummary);
     vscode.window.showInformationMessage('Gradle Migration Automator: Migration complete (resumed). Check output channel for summary.');
     
   } catch (err) {
