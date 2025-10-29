@@ -659,9 +659,10 @@ Generate buildSrc files and subproject updates following ops_server patterns.
       if (!this.modelsLogged) {
         this.channel.appendLine(`[transformationPlanner] Available models:`);
         models.forEach((model, index) => {
+          const isGPT41 = model.id.includes('gpt-4.1') || model.name.toLowerCase().includes('gpt4.1');
           const isGPT4o = model.id.includes('gpt-4o') || model.name.toLowerCase().includes('gpt4o');
           const isGPT4 = model.id.includes('gpt-4') || model.name.toLowerCase().includes('gpt4');
-          const version = isGPT4o ? '(GPT-4.1)' : isGPT4 ? '(GPT-4.0)' : '';
+          const version = isGPT41 || isGPT4o ? '(GPT-4.1)' : isGPT4 ? '(GPT-4.0)' : '';
           this.channel.appendLine(`[transformationPlanner]   ${index + 1}. ${model.name} ${version} - ${model.id}`);
         });
         this.modelsLogged = true;
@@ -675,8 +676,9 @@ Generate buildSrc files and subproject updates following ops_server patterns.
           model.name.toLowerCase().includes(preferredId.toLowerCase())
         );
         if (userPreferredModel) {
+          const isGPT41 = userPreferredModel.id.includes('gpt-4.1') || userPreferredModel.name.toLowerCase().includes('gpt4.1');
           const isGPT4o = userPreferredModel.id.includes('gpt-4o') || userPreferredModel.name.toLowerCase().includes('gpt4o');
-          const version = isGPT4o ? 'GPT-4.1' : 'GPT-4.0';
+          const version = isGPT41 || isGPT4o ? 'GPT-4.1' : 'GPT-4.0';
           this.channel.appendLine(`[transformationPlanner] ✓ Using user-preferred model: ${userPreferredModel.name} (${version})`);
           return userPreferredModel;
         } else {
@@ -684,8 +686,8 @@ Generate buildSrc files and subproject updates following ops_server patterns.
         }
       }
 
-      // Priority order: gpt-4o (4.1) > gpt-4 (4.0) > any available model
-      const modelPreferences = ['gpt-4o', 'gpt-4', 'copilot-gpt-4', 'copilot-gpt-3.5-turbo'];
+      // Priority order: gpt-4.1 > gpt-4o (4.1) > gpt-4 (4.0) > any available model
+      const modelPreferences = ['gpt-4.1', 'gpt-4o', 'gpt-4', 'copilot-gpt-4', 'copilot-gpt-3.5-turbo'];
       
       for (const preferredModel of modelPreferences) {
         const selectedModel = models.find(model => 
@@ -693,8 +695,9 @@ Generate buildSrc files and subproject updates following ops_server patterns.
           model.name.toLowerCase().includes(preferredModel.replace('-', ''))
         );
         if (selectedModel) {
+          const isGPT41 = selectedModel.id.includes('gpt-4.1') || selectedModel.name.toLowerCase().includes('gpt4.1');
           const isGPT4o = selectedModel.id.includes('gpt-4o') || selectedModel.name.toLowerCase().includes('gpt4o');
-          const version = isGPT4o ? 'GPT-4.1' : 'GPT-4.0';
+          const version = isGPT41 || isGPT4o ? 'GPT-4.1' : 'GPT-4.0';
           this.channel.appendLine(`[transformationPlanner] ✓ Auto-selected: ${selectedModel.name} (${version})`);
           return selectedModel;
         }
