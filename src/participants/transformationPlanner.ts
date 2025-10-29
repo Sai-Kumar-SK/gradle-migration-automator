@@ -544,31 +544,10 @@ export class TransformationPlanner {
     projectContext: AIGenerationContext,
     opsServerPath: string
   ): string {
-    // Create a simplified prompt that's more likely to work within token limits
-    const dependenciesList = projectContext.dependencies.slice(0, 10).join(', '); // Limit dependencies
+    // Ultra-minimal prompt similar to the working test prompt
+    const deps = projectContext.dependencies.slice(0, 5).join(', ');
     
-    return `# Generate libs.versions.toml for Gradle Version Catalog
-
-## Task: Create libs.versions.toml file
-
-Project Type: ${projectContext.projectType}
-Dependencies: ${dependenciesList}
-
-## Instructions:
-1. Create a TOML file with [versions], [libraries], and [plugins] sections
-2. Include only the dependencies listed above
-3. Use semantic version references
-4. Follow standard Gradle version catalog patterns
-
-## Output Format:
-\`\`\`json
-{
-  "libsVersionsToml": "# TOML content here",
-  "confidence": 0.9
-}
-\`\`\`
-
-Generate the libs.versions.toml content.`;
+    return `Create a libs.versions.toml file for these dependencies: ${deps}. Return JSON with libsVersionsToml field containing the TOML content.`;
   }
 
   private createBuildGradleEnhancementPrompt(
@@ -576,34 +555,9 @@ Generate the libs.versions.toml content.`;
     projectContext: AIGenerationContext,
     opsServerPath: string
   ): string {
-    const isRootBuild = filePath.endsWith('build.gradle') && !filePath.includes('/');
-    const dependenciesList = projectContext.dependencies.slice(0, 8).join(', '); // Limit dependencies
+    const isRoot = filePath.endsWith('build.gradle') && !filePath.includes('/');
     
-    return `# Enhance build.gradle for Version Catalog Migration
-
-## Task: Update ${filePath}
-
-File Type: ${isRootBuild ? 'Root build.gradle' : 'Module build.gradle'}
-Project: ${projectContext.projectType}
-Dependencies: ${dependenciesList}
-
-## Instructions:
-1. Remove repositories blocks and publishing configs
-2. ${isRootBuild ? 'Keep plugins and subprojects' : 'Add common.lib plugin if subproject'}
-3. Preserve existing dependencies
-4. Clean up wrapper tasks
-
-## Output Format:
-\`\`\`json
-{
-  "buildGradleUpdates": {
-    "${filePath}": "# Enhanced build.gradle content"
-  },
-  "confidence": 0.9
-}
-\`\`\`
-
-Generate the enhanced build.gradle content.`;
+    return `Clean up ${filePath} by removing repositories and wrapper tasks. ${isRoot ? 'Keep plugins and subprojects.' : 'Add common.lib plugin.'} Return JSON with buildGradleUpdates field.`;
   }
 
   private createRootBuildGradlePrompt(
