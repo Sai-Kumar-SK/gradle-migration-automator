@@ -1145,7 +1145,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       this.channel.appendLine(`[transformationPlanner] 🚀 Sending prompt to Copilot for libs.versions.toml generation...`);
       this.channel.appendLine(`[transformationPlanner] 🤖 Using AI-enhanced generation with ops_server context`);
       
-      const opsServerPath = '.copilot/meta/ops_server';
+      const opsServerPath = 'C:\\Copilot\\.copilot\\meta\\ops_server';
       const prompt = this.createLibsVersionsTomlPrompt(projectContext, opsServerPath);
       
       const result = await this.invokeAIGeneration(prompt);
@@ -1185,7 +1185,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       };
 
       // Create AI prompt for build.gradle enhancement
-      const opsServerPath = '.copilot/meta/ops_server';
+      const opsServerPath = 'C:\\Copilot\\.copilot\\meta\\ops_server';
       const prompt = this.createBuildGradleEnhancementPrompt(filePath, projectContext, opsServerPath);
       
       this.channel.appendLine(`[transformationPlanner] 📝 Preparing to send prompt to Copilot for build.gradle file: ${filePath}`);
@@ -1234,7 +1234,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       };
 
       // Create enhanced AI prompt specifically for root build.gradle cleanup
-      const opsServerPath = '.copilot/meta/ops_server';
+      const opsServerPath = 'C:\\Copilot\\.copilot\\meta\\ops_server';
       const prompt = this.createRootBuildGradlePrompt(content, projectContext, opsServerPath);
       
       // Attempt AI-enhanced processing
@@ -1607,6 +1607,38 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
     
     // Validate the migration results
     this.validateMigrationCompliance(projectRoot)
+
+    // Step 8: Handle Jenkinsfile operations
+    this.channel.appendLine(`[transformationPlanner] Step 8: Handling Jenkinsfile operations`)
+    
+    // Delete all Jenkinsfile.*.groovy files from root folder
+    const jenkinsfilePattern = /^Jenkinsfile\..*\.groovy$/
+    const rootFiles = fs.readdirSync(projectRoot)
+    for (const file of rootFiles) {
+      if (jenkinsfilePattern.test(file)) {
+        const filePath = path.join(projectRoot, file)
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath)
+          filesChanged.push(file)
+          lowRisk++
+          this.channel.appendLine(`[transformationPlanner] ✓ Deleted ${file}`)
+        }
+      }
+    }
+    
+    // Copy Jenkinsfile from .copilot/meta to root folder
+    const metaJenkinsfile = path.join(this.metaDir, 'Jenkinsfile')
+    const rootJenkinsfile = path.join(projectRoot, 'Jenkinsfile')
+    if (fs.existsSync(metaJenkinsfile)) {
+      this.channel.appendLine(`[transformationPlanner] Copying templated Jenkins file replacing vars`)
+      const jenkinsfileContent = fs.readFileSync(metaJenkinsfile, 'utf-8')
+      fs.writeFileSync(rootJenkinsfile, jenkinsfileContent)
+      filesChanged.push('Jenkinsfile')
+      lowRisk++
+      this.channel.appendLine(`[transformationPlanner] ✓ Copied templated Jenkinsfile from .copilot/meta`)
+    } else {
+      this.channel.appendLine(`[transformationPlanner] ⚠ Warning: .copilot/meta/Jenkinsfile not found, skipping Jenkinsfile copy`)
+    }
 
     // FINAL STEP: Delete all marked files at the end
     this.channel.appendLine(`[transformationPlanner] Final Step: Deleting obsolete files`)

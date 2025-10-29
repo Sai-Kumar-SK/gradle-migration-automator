@@ -40,7 +40,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const text = String(request?.prompt ?? request?.message ?? '');
       try {
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-        const metaDir = path.join(workspaceRoot, '.copilot', 'meta');
+        const metaDir = 'C:\\Copilot\\.copilot\\meta';
         fs.mkdirSync(metaDir, { recursive: true });
         const agent = new GitAgent(channel, metaDir);
         const commitMsgMatch = text.match(/commitMessage:\s*\"([^\"]+)\"/i);
@@ -68,7 +68,7 @@ export async function activate(context: vscode.ExtensionContext) {
       telemetry.info('chat_gradleParser_invoked');
       try {
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-        const metaDir = path.join(workspaceRoot, '.copilot', 'meta');
+        const metaDir = 'C:\\Copilot\\.copilot\\meta';
         fs.mkdirSync(metaDir, { recursive: true });
         const gitMetaPath = path.join(metaDir, 'gitAgent.json');
         let workspacePath = workspaceRoot;
@@ -87,7 +87,7 @@ export async function activate(context: vscode.ExtensionContext) {
       telemetry.info('chat_transformationPlanner_invoked');
       try {
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-        const metaDir = path.join(workspaceRoot, '.copilot', 'meta');
+        const metaDir = 'C:\\Copilot\\.copilot\\meta';
         fs.mkdirSync(metaDir, { recursive: true });
         
         const planner = new TransformationPlanner(channel, metaDir);
@@ -134,19 +134,19 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const migrateCmd = vscode.commands.registerCommand('gradle-migration-automator.migrate', async () => {
     try {
-      // Always use the original workspace root for .copilot/meta, not the cloned repo
+      // Always use the default meta folder path
       const originalWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || path.join(process.cwd(), 'workspace');
       
       // Check if we're already in a cloned repo workspace (after restart)
       let workspaceRoot = originalWorkspaceRoot;
-      let metaDir = path.join(originalWorkspaceRoot, '.copilot', 'meta');
+      let metaDir = 'C:\\Copilot\\.copilot\\meta';
       
-      // If the current workspace looks like a cloned repo, find the parent migration folder
+      // If the current workspace looks like a cloned repo, still use the default meta folder
       if (originalWorkspaceRoot.includes('\\workspace\\') || originalWorkspaceRoot.includes('/workspace/')) {
         // Extract the migration root (parent of workspace folder)
         const migrationRoot = originalWorkspaceRoot.split(path.sep + 'workspace' + path.sep)[0];
-        metaDir = path.join(migrationRoot, '.copilot', 'meta');
-        channel.appendLine(`[MIGRATION] Detected cloned repo workspace, using migration root: ${migrationRoot}`);
+        // metaDir remains the same fixed path
+        channel.appendLine(`[MIGRATION] Detected cloned repo workspace, migration root: ${migrationRoot}, using default meta folder: ${metaDir}`);
       }
       
       const stateFile = path.join(metaDir, 'migration-state.json');
@@ -210,10 +210,10 @@ export async function activate(context: vscode.ExtensionContext) {
       const commitMessage = await vscode.window.showInputBox({ prompt: 'Commit message for migration changes', ignoreFocusOut: true, value: 'chore: migrate Nexus to JFrog Artifactory' });
       if (!commitMessage) { throw new Error('Commit message is required'); }
 
-      // For fresh migration, use the original workspace root for meta directory
+      // For fresh migration, use the default meta directory
       if (!originalWorkspaceRoot.includes('\\workspace\\') && !originalWorkspaceRoot.includes('/workspace/')) {
         workspaceRoot = originalWorkspaceRoot;
-        metaDir = path.join(workspaceRoot, '.copilot', 'meta');
+        // metaDir remains the same fixed path
       }
       // If we're already in a cloned repo, metaDir was set correctly above
       fs.mkdirSync(metaDir, { recursive: true });
