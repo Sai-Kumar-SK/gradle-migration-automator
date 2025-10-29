@@ -240,11 +240,8 @@ function buildToml(
   // Add gradle-platform version
   lines.push(`plasmaGradlePlugins = "${GRADLE_PLATFORM_VERSION}"`)
   
-  // Merge reference versions with extracted versions (reference takes precedence)
+  // Use only the extracted versions from the current project
   const mergedVersions = { ...versions };
-  if (referenceContext?.libsVersions?.versions) {
-    Object.assign(mergedVersions, referenceContext.libsVersions.versions);
-  }
 
   // Add extracted versions (excluding any that match excluded dependencies or version keys)
   for (const [k, v] of Object.entries(mergedVersions)) {
@@ -267,12 +264,8 @@ function buildToml(
     lines.push(`${plugin.alias} = { module = "${plugin.module}", version.ref = "${plugin.versionRef}" }`)
   }
   
-  // Add reference libraries if available
-  if (referenceContext?.libsVersions?.libraries) {
-    for (const [alias, libDef] of Object.entries(referenceContext.libsVersions.libraries)) {
-      lines.push(`${alias} = ${JSON.stringify(libDef).replace(/"/g, '"')}`)
-    }
-  }
+  // Note: ops_server libraries are used as reference only, not copied directly
+  // The AI generation will use them as examples for intelligent suggestions
   
   // Add extracted dependencies (excluding unwanted ones)
   for (const d of deps) {
@@ -512,10 +505,12 @@ export class TransformationPlanner {
     }
   ): string {
     return `
-# Gradle Migration AI Assistant
+# Gradle Migration AI Assistant - TOML-Based Version Catalog Modernization
 
 ## Context: ops_server Reference Repository
-You are helping migrate a Gradle project to use version catalogs and build-src conventions, using the entire ops_server repository as a comprehensive reference implementation.
+You are helping migrate a Gradle project to a modern TOML-based version catalog model and build-src conventions. 
+
+**IMPORTANT**: Please refer to the ops_server repository as a comprehensive reference implementation. Think carefully about the patterns and best practices demonstrated in ops_server before making suggestions. Use ops_server as your primary guide for modernization decisions.
 
 ## Complete ops_server Repository Context:
 
@@ -560,15 +555,20 @@ ${referenceContext.buildPatterns.slice(0, 20).join('\n')}
 - Dependencies: ${projectContext.dependencies.join(', ')}
 - Custom Configurations: ${JSON.stringify(projectContext.customConfigurations, null, 2)}
 
-## Task:
-Generate enhanced Gradle files that:
-1. Follow ALL ops_server conventions, patterns, and architectural decisions
-2. Use the entire repository structure as a reference for best practices
-3. Include appropriate version catalogs matching ops_server's approach
-4. Apply build.gradle patterns consistently across all modules
-5. Maintain compatibility with existing build logic while modernizing
-6. Use buildSrc conventions from ops_server where applicable
-4. Use modern Gradle best practices
+## Task: Modernize to TOML-Based Version Catalog Model
+Generate enhanced Gradle files that modernize the project to use TOML-based version catalogs:
+
+**Primary Instructions:**
+1. **REFER TO ops_server**: Study the ops_server patterns carefully and think about how they apply to this project
+2. **TOML-BASED MODERNIZATION**: Convert the project to use gradle/libs.versions.toml for dependency management
+3. **SELECTIVE REFERENCE**: Use ops_server as a REFERENCE ONLY - do not copy all dependencies unnecessarily
+4. **PROJECT-SPECIFIC**: Include only the current project's dependencies in libs.versions.toml
+5. **PATTERN ADOPTION**: Follow ops_server conventions and patterns for structure and organization
+6. **INTELLIGENT ADAPTATION**: Apply build.gradle patterns from ops_server as examples, not direct copies
+7. **COMPATIBILITY**: Maintain compatibility with existing build logic while modernizing
+8. **BUILDSRC CONVENTIONS**: Use buildSrc conventions from ops_server where applicable
+9. **MODERN PRACTICES**: Use modern Gradle best practices and TOML version catalog features
+10. **SMART DEPENDENCY SELECTION**: Be intelligent about which dependencies and versions to include based on the current project's needs
 
 ## Expected Output Format:
 \`\`\`json
@@ -1038,6 +1038,8 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 
     // Try AI-enhanced generation first
     try {
+      this.channel.appendLine(`[transformationPlanner] 📝 Preparing to send prompt to Copilot for libs.versions.toml generation`);
+      this.channel.appendLine(`[transformationPlanner] 🚀 Sending prompt to Copilot for libs.versions.toml generation...`);
       this.channel.appendLine(`[transformationPlanner] 🤖 Using AI-enhanced generation with ops_server context`);
       const aiContent = await this.generateAIEnhancedContent(projectContext, referenceContext || {});
       
@@ -1072,6 +1074,9 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       // Create AI prompt for build.gradle enhancement
       const prompt = this.createAIPrompt(projectContext, referenceContext);
       
+      this.channel.appendLine(`[transformationPlanner] 📝 Preparing to send prompt to Copilot for build.gradle file: ${filePath}`);
+      this.channel.appendLine(`[transformationPlanner] 🚀 Sending prompt to Copilot for build.gradle processing...`);
+      
       // Attempt AI-enhanced generation
       const aiResponse = await this.generateAIEnhancedContent(projectContext, referenceContext);
       
@@ -1092,6 +1097,139 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       this.channel.appendLine(`[transformationPlanner] Error in AI enhancement for ${filePath}: ${error}`);
       return content;
     }
+  }
+
+  private async processRootBuildGradleWithAI(
+    content: string, 
+    projectRoot: string, 
+    referenceContext: any
+  ): Promise<void> {
+    try {
+      // Prepare AI context for root build.gradle processing
+      const projectContext: AIGenerationContext = {
+        projectType: 'root-build-gradle-modernization',
+        dependencies: this.extractDependenciesFromContent(content),
+        customConfigurations: this.extractCustomConfigurations(content),
+        buildPatterns: this.extractBuildPatterns(content)
+      };
+
+      // Create enhanced AI prompt specifically for root build.gradle cleanup
+      const prompt = this.createRootBuildGradlePrompt(content, projectContext, referenceContext);
+      
+      // Attempt AI-enhanced processing
+      const aiResponse = await this.generateAIEnhancedContent(projectContext, referenceContext);
+      
+      if (aiResponse && aiResponse.confidence > 0.6) {
+        // Process AI suggestions for buildSrc files
+        if (aiResponse.buildSrcFiles) {
+          for (const [fileName, fileContent] of Object.entries(aiResponse.buildSrcFiles)) {
+            const buildSrcFilePath = path.join(projectRoot, 'buildSrc', 'src', 'main', 'groovy', fileName);
+            fs.mkdirSync(path.dirname(buildSrcFilePath), { recursive: true });
+            fs.writeFileSync(buildSrcFilePath, fileContent);
+            this.channel.appendLine(`[transformationPlanner] ✓ Created buildSrc file: ${fileName}`);
+          }
+        }
+
+        // Process AI suggestions for subproject build.gradle updates
+        if (aiResponse.buildGradleUpdates) {
+          for (const [subprojectPath, updatedContent] of Object.entries(aiResponse.buildGradleUpdates)) {
+            const fullSubprojectPath = path.join(projectRoot, subprojectPath, 'build.gradle');
+            
+            // Check if the subproject build.gradle exists
+            if (fs.existsSync(fullSubprojectPath)) {
+              try {
+                fs.writeFileSync(fullSubprojectPath, updatedContent);
+                this.channel.appendLine(`[transformationPlanner] ✓ Updated subproject build.gradle: ${subprojectPath}/build.gradle`);
+              } catch (writeError) {
+                this.channel.appendLine(`[transformationPlanner] ⚠️ Failed to update ${subprojectPath}/build.gradle: ${writeError}`);
+              }
+            } else {
+              this.channel.appendLine(`[transformationPlanner] ⚠️ Subproject build.gradle not found: ${fullSubprojectPath}`);
+            }
+          }
+        }
+
+        this.channel.appendLine(`[transformationPlanner] ✓ AI-processed root build.gradle with confidence: ${aiResponse.confidence}`);
+      } else {
+        this.channel.appendLine(`[transformationPlanner] ⚠️ AI processing confidence too low, proceeding with deletion`);
+      }
+      
+    } catch (error) {
+      this.channel.appendLine(`[transformationPlanner] Error in AI processing for root build.gradle: ${error}`);
+    }
+  }
+
+  private createRootBuildGradlePrompt(
+    content: string,
+    projectContext: AIGenerationContext,
+    referenceContext: any
+  ): string {
+    return `
+You are modernizing a Gradle project to use TOML-based version catalogs. 
+
+CRITICAL INSTRUCTIONS:
+1. REMOVE ALL unnecessary elements from root build.gradle:
+   - repositories blocks (these go to buildSrc)
+   - ext blocks (versions go to libs.versions.toml)
+   - nexus/artifactory publishing configurations
+   - gradle wrapper task definitions
+   - any plugin management that should be in buildSrc
+
+2. EXTRACT AND MOVE essential logic to buildSrc:
+   - Custom tasks that are reusable
+   - Common configurations
+   - Plugin application logic
+   - Repository definitions
+
+3. DISTRIBUTE allprojects/subprojects configurations:
+   - Identify any allprojects { } or subprojects { } blocks
+   - Extract configurations that should apply to individual subprojects
+   - Generate updates for each subproject's build.gradle file
+   - Include: group/version settings, plugin applications, common configurations
+   - Exclude: nexus/publishing configs (these should be removed entirely)
+   - Example: if allprojects has "group = rootProject.group", add this to each subproject
+
+4. REFER TO ops_server for best practices and patterns:
+   - Use ops_server as a reference for modern Gradle structure
+   - Think about how ops_server organizes buildSrc
+   - Consider ops_server's approach to plugin management
+   - See how ops_server handles subproject configurations
+
+5. MODERNIZATION CONTEXT:
+   - We are modernizing to TOML-based version catalog model
+   - Dependencies should reference libs.versions.toml
+   - Plugins should be managed through buildSrc
+   - Root build.gradle should be minimal or empty
+   - Each subproject should have its own clean build.gradle
+
+CURRENT ROOT BUILD.GRADLE CONTENT:
+${content}
+
+PROJECT CONTEXT:
+- Project Type: ${projectContext.projectType}
+- Dependencies: ${projectContext.dependencies.join(', ')}
+- Build Patterns: ${projectContext.buildPatterns.join(', ')}
+
+REFERENCE CONTEXT (ops_server):
+${JSON.stringify(referenceContext, null, 2)}
+
+Please analyze the root build.gradle and:
+1. Identify what should be moved to buildSrc
+2. Identify what should be deleted
+3. Identify allprojects/subprojects configurations to distribute
+4. Generate appropriate buildSrc files for essential logic
+5. Generate buildGradleUpdates for each subproject that needs allprojects configurations
+6. Ensure the modernization follows TOML-based version catalog patterns
+
+IMPORTANT: Return a JSON response with:
+{
+  "analysis": "your analysis of what was found and what actions to take",
+  "buildSrcFiles": { "path/to/file.gradle": "content" },
+  "buildGradleUpdates": { "subproject/build.gradle": "configurations to add" },
+  "deletions": ["list of things to delete from root"],
+  "confidence": 0.8
+}
+`;
   }
 
   private extractDependenciesFromContent(content: string): string[] {
@@ -1286,6 +1424,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 
   async executeStepByStepMigration(parse: GradleParseOutput, projectRoot: string): Promise<{ filesChanged: string[]; riskSummary: string }>{
     const filesChanged: string[] = []
+    const filesToDelete: string[] = [] // Collect files to delete at the end
     let highRisk = 0, mediumRisk = 0, lowRisk = 0
 
     this.channel.appendLine(`[transformationPlanner] Starting step-by-step Gradle migration for: ${projectRoot}`)
@@ -1354,28 +1493,33 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 
     // Step 5: libs.versions.toml customization is already included in buildToml function
 
-    // Step 6: Update subproject build.gradle files
-    this.channel.appendLine(`[transformationPlanner] Step 5: Updating build.gradle files`)
+    // Step 6: Process root build.gradle with Copilot before deletion
+    this.channel.appendLine(`[transformationPlanner] Step 5: Processing root build.gradle with Copilot`)
     const rootBuildPath = path.join(projectRoot, 'build.gradle')
     if (fs.existsSync(rootBuildPath)) {
-      fs.unlinkSync(rootBuildPath)
-      filesChanged.push('build.gradle')
-      lowRisk++
-      this.channel.appendLine(`[transformationPlanner] ✓ Deleted root build.gradle`)
+      const rootBuildContent = fs.readFileSync(rootBuildPath, 'utf-8')
+      this.channel.appendLine(`[transformationPlanner] 📝 Preparing to send prompt to Copilot for root build.gradle processing`)
+      this.channel.appendLine(`[transformationPlanner] 🚀 Sending prompt to Copilot to extract essential logic from root build.gradle...`)
+      
+      // Process root build.gradle with enhanced AI prompt for cleanup and logic extraction
+      await this.processRootBuildGradleWithAI(rootBuildContent, projectRoot, referenceContext);
+      mediumRisk++
+      this.channel.appendLine(`[transformationPlanner] ✓ Processed root build.gradle with Copilot`)
+      
+      // Mark root build.gradle for deletion at the end
+      filesToDelete.push(rootBuildPath)
     }
 
-    // Delete versions.gradle if it exists
+    // Mark versions.gradle for deletion at the end if it exists
     const versionsGradlePath = path.join(projectRoot, 'versions.gradle')
     if (fs.existsSync(versionsGradlePath)) {
-      fs.unlinkSync(versionsGradlePath)
-      filesChanged.push('versions.gradle')
-      lowRisk++
-      this.channel.appendLine(`[transformationPlanner] ✓ Deleted versions.gradle`)
+      filesToDelete.push(versionsGradlePath)
     }
 
     for (const fileAbs of buildFiles) {
       const rel = path.relative(projectRoot, fileAbs)
-      if (rel === 'build.gradle') continue // already removed
+      if (rel === 'build.gradle') continue // will be deleted at the end
+      if (rel.endsWith('versions.gradle')) continue // versions.gradle should only be handled in root
       const original = fs.readFileSync(fileAbs, 'utf-8')
       const aiUpdated = await this.stripRepositoriesAndWrapperWithAI(original, rel, referenceContext);
       let { updated, changes } = stripRepositoriesAndWrapper(aiUpdated)
@@ -1397,6 +1541,18 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
     
     // Validate the migration results
     this.validateMigrationCompliance(projectRoot)
+
+    // FINAL STEP: Delete all marked files at the end
+    this.channel.appendLine(`[transformationPlanner] Final Step: Deleting obsolete files`)
+    for (const filePath of filesToDelete) {
+      if (fs.existsSync(filePath)) {
+        const relativePath = path.relative(projectRoot, filePath)
+        fs.unlinkSync(filePath)
+        filesChanged.push(relativePath)
+        lowRisk++
+        this.channel.appendLine(`[transformationPlanner] ✓ Deleted ${relativePath}`)
+      }
+    }
 
     const riskSummary = `low=${lowRisk}, medium=${mediumRisk}, high=${highRisk}`
     this.channel.appendLine(`[transformationPlanner] ✓ Migration completed. Risk summary: ${riskSummary}`)
@@ -1714,39 +1870,23 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       return
     }
     
-    let currentVersion = '6.8' // default fallback
-    
-    // Extract current Gradle version if wrapper exists
-    if (fs.existsSync(currentWrapperPath)) {
-      try {
-        const currentContent = fs.readFileSync(currentWrapperPath, 'utf-8')
-        const versionMatch = currentContent.match(/distributionUrl=.*gradle-([0-9]+\.[0-9]+(?:\.[0-9]+)?)-/)
-        if (versionMatch) {
-          currentVersion = versionMatch[1]
-          this.channel.appendLine(`[transformationPlanner] Preserving Gradle version: ${currentVersion}`)
-        }
-      } catch (error) {
-        this.channel.appendLine(`[transformationPlanner] Warning: Could not read current wrapper properties: ${error}`)
-      }
-    }
-    
-    // Read meta wrapper properties and update version
+    // Read meta wrapper properties and copy exactly as-is without any modifications
     try {
       const metaContent = fs.readFileSync(metaWrapperPath, 'utf-8')
-      const updatedContent = metaContent.replace(
-        /distributionUrl=.*gradle-[0-9]+\.[0-9]+(?:\.[0-9]+)?-/,
-        `distributionUrl=https\\://services.gradle.org/distributions/gradle-${currentVersion}-`
-      )
       
       // Ensure wrapper directory exists
       fs.mkdirSync(path.dirname(currentWrapperPath), { recursive: true })
-      fs.writeFileSync(currentWrapperPath, updatedContent)
+      
+      // Write the exact content from meta folder without any modifications
+      fs.writeFileSync(currentWrapperPath, metaContent)
       
       const relPath = path.relative(projectRoot, currentWrapperPath)
       filesChanged.push(relPath)
       
+      this.channel.appendLine(`[transformationPlanner] ✓ Copied gradle-wrapper.properties exactly from meta folder`)
+      
     } catch (error) {
-      this.channel.appendLine(`[transformationPlanner] Error updating gradle-wrapper.properties: ${error}`)
+      this.channel.appendLine(`[transformationPlanner] Error copying gradle-wrapper.properties: ${error}`)
     }
   }
 
@@ -1754,11 +1894,8 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
     const buildFiles: string[] = []
     const stack: string[] = [projectRoot]
     
-    // Also check for versions.gradle in root
-    const versionsGradlePath = path.join(projectRoot, 'versions.gradle')
-    if (fs.existsSync(versionsGradlePath)) {
-      buildFiles.push(versionsGradlePath)
-    }
+    // Note: versions.gradle is handled separately in executeStepByStepMigration
+    // We only want to find build.gradle files here
     
     while (stack.length) {
       const dir = stack.pop()!
