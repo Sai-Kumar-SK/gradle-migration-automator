@@ -12,7 +12,6 @@ The extension leaves Gradle task execution (build/clean/publish) to the VS Code 
 - GitHub Copilot extension (for AI-enhanced generation)
 - Network access to your Git remote
 - An Artifactory repository and URL to target
-- **ops_server reference project**: Must be available in `.copilot/meta/ops_server/` folder for migration context
 
 ## AI Model Selection
 
@@ -58,7 +57,7 @@ The extension defines three chat participants. You can run them step-by-step for
 
 Participants:
 - `gitAgent` — clone, checkout, branch, commit, push
-- `gradleParser` — parse Gradle build files (Groovy/Kotlin DSL)
+- `gradleParser` — parse Gradle build files (Groovy DSL)
 - `transformationPlanner` — design unified-diff patches and risk levels
 
 Artifacts are written to `.copilot/meta/`:
@@ -99,12 +98,12 @@ Inputs:
 - projectRoot: <abs-workspacePath-from-gitAgent>
 
 Tasks:
-- Scan build.gradle(.kts) and settings.gradle(.kts)
+- Scan build.gradle and settings.gradle
 - Extract plugin IDs, repository definitions (including URLs), publishing configuration
 - Detect references to Nexus/Sonatype
 
 Output JSON (normalized):
-{ "modules": [ { "path": "<submodule-or-.">, "dsl": "groovy|kotlin|unknown", "plugins": [...], "repositories": [...], "publishing": { ... } | null, "nexusReferences": true|false, "files": ["<relative-gradle-file>"] } ] }
+{ "modules": [ { "path": "<submodule-or-.">, "dsl": "groovy", "plugins": [...], "repositories": [...], "publishing": { ... } | null, "nexusReferences": true|false, "files": ["<relative-gradle-file>"] } ] }
 
 Write the output to .copilot/meta/gradle-ast.json and show a summary in chat.
 ```

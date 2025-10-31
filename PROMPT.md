@@ -35,7 +35,7 @@ Strict Steps:
 1. Root `settings.gradle`: replace entire file content with only `rootProject.name = '<repo-folder-name>'` and `include` lines; remove any `gradle.allprojects`, `repositories`, `publishing`, or other blocks.
 2. `buildSrc` scaffolding: copy the entire `buildSrc` folder (including `settings.gradle`, `build.gradle`, and `common.lib.gradle`) from `.copilot/meta/buildSrc` into the repository, overwriting any existing files. Do NOT generate custom content.
 3. Version catalog: generate `gradle/libs.versions.toml` by scanning ALL `build.gradle` files across the repository (not just parent).
-4. Delete root `build.gradle`.
+4. Preserve root `build.gradle` and `versions.gradle` files (no deletion).
 5. Subprojects: update each `build.gradle` to apply `plugins { id 'common.lib' }`, remove `repositories{}`, `publishing{}`, wrapper tasks, and `ext{}`/`apply from: 'versions.gradle'`; keep dependency declarations as-is (Phase 2 will convert to `libs.*`).
 ```
 

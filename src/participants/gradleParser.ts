@@ -4,7 +4,7 @@ import * as path from 'path';
 
 export type GradleFileInfo = {
   path: string;
-  dsl: 'groovy' | 'kotlin';
+  dsl: 'groovy';
   plugins: string[];
   repositories: string[];
   publishingBlocks: boolean;
@@ -29,8 +29,8 @@ function readFileSafe(file: string): string | null {
   try { return fs.readFileSync(file, 'utf-8'); } catch { return null; }
 }
 
-function detectDSL(filePath: string): 'groovy' | 'kotlin' {
-  return filePath.endsWith('.kts') ? 'kotlin' : 'groovy';
+function detectDSL(filePath: string): 'groovy' {
+  return 'groovy';
 }
 
 function extractPlugins(content: string): string[] {

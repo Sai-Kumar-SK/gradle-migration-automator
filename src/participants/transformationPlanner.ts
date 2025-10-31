@@ -225,71 +225,7 @@ function extractDependencies(text: string): Array<{ conf: string; group?: string
   return out
 }
 
-function buildToml(
-  versions: Record<string, string>, 
-  deps: Array<{ group?: string; artifact?: string; version?: string }>,
-  referenceContext?: { libsVersions?: any; buildPatterns?: string[] }
-): string {
-  // This function now serves as a fallback for AI generation
-  // The main AI-enhanced logic is handled in the TransformationPlanner class
-  const lines: string[] = []
-  
-  // Add versions section
-  lines.push('[versions]')
-  
-  // Add gradle-platform version
-  lines.push(`plasmaGradlePlugins = "${GRADLE_PLATFORM_VERSION}"`)
-  
-  // Use only the extracted versions from the current project
-  const mergedVersions = { ...versions };
 
-  // Add extracted versions (excluding any that match excluded dependencies or version keys)
-  for (const [k, v] of Object.entries(mergedVersions)) {
-    const shouldExcludeDep = EXCLUDED_DEPENDENCIES.some(excluded => 
-      k.toLowerCase().includes(excluded.toLowerCase()) || 
-      v.toLowerCase().includes(excluded.toLowerCase())
-    )
-    const shouldExcludeKey = EXCLUDED_VERSION_KEYS.some(excluded => 
-      k.toLowerCase().includes(excluded.toLowerCase())
-    )
-    if (!shouldExcludeDep && !shouldExcludeKey) {
-      lines.push(`${k} = "${v}"`)
-    }
-  }
-  
-  lines.push('\n[libraries]')
-  
-  // Add gradle-platform plugins as libraries
-  for (const plugin of GRADLE_PLATFORM_PLUGINS) {
-    lines.push(`${plugin.alias} = { module = "${plugin.module}", version.ref = "${plugin.versionRef}" }`)
-  }
-  
-  // Note: ops_server libraries are used as reference only, not copied directly
-  // The AI generation will use them as examples for intelligent suggestions
-  
-  // Add extracted dependencies (excluding unwanted ones)
-  for (const d of deps) {
-    if (!d.group || !d.artifact) continue
-    
-    // Check if this dependency should be excluded
-    const shouldExclude = EXCLUDED_DEPENDENCIES.some(excluded => 
-      d.group?.toLowerCase().includes(excluded.toLowerCase()) || 
-      d.artifact?.toLowerCase().includes(excluded.toLowerCase())
-    )
-    
-    if (!shouldExclude) {
-      const alias = normalizeAlias(d.group, d.artifact)
-      const version = d.version && versions[d.version] ? `, version.ref = "${d.version}"` : (d.version ? `, version = "${d.version}"` : '')
-      lines.push(`${alias} = { group = "${d.group}", name = "${d.artifact}"${version} }`)
-    }
-  }
-  
-  lines.push('\n[plugins]')
-  lines.push('publishing.artifactory = { id = "com.org.publishing-artifactory", version = "1.0.0" }')
-  lines.push('repositories.artifactory = { id = "com.org.repositories-artifactory", version = "1.0.0" }')
-  lines.push('scoverage = { id = "org.scoverage", version = "8.1.3" }')
-  return lines.join('\n') + '\n'
-}
 
 export class TransformationPlanner {
   private preferredModelId?: string; // Allow explicit model selection
@@ -298,7 +234,6 @@ export class TransformationPlanner {
   constructor(
     private channel: vscode.OutputChannel, 
     private metaDir: string, 
-    private referenceProjectUrl?: string,
     private projectRoot?: string
   ) {}
 
@@ -422,7 +357,6 @@ export class TransformationPlanner {
       '- Each step must complete before proceeding to the next',
       '- @transformationPlanner handles all migration steps automatically',
       '- Follow the exact commands provided above',
-      '- Copilot guidelines in `.copilot/meta/copilot.md` support this workflow',
       '',
       '## 🚀 TO START THE MIGRATION:',
       'Begin with Step 1 (repository setup) and follow the sequence.',
@@ -432,204 +366,37 @@ export class TransformationPlanner {
     console.log(instructions.join('\n'));
   }
 
-  private async getOpsServerReference(): Promise<string> {
-    // Check for ops_server in .copilot/meta/
-    const opsServerDir = path.join(this.metaDir, 'ops_server');
-    if (fs.existsSync(opsServerDir)) {
-      this.channel.appendLine(`[transformationPlanner] Found ops_server reference project at: ${opsServerDir}`);
-      return opsServerDir;
-    }
-    
-    // ops_server is required - throw error if not found
-    throw new Error('Reference project "ops_server" not found in .copilot/meta/ folder. Please ensure the ops_server reference project is available.');
-  }
-
-  private async cloneReferenceProject(): Promise<string | null> {
-    if (!this.referenceProjectUrl) {
-      return null;
-    }
-
-    try {
-      const { execSync } = require('child_process');
-      const referenceDir = path.join(this.metaDir, 'reference-project');
-      
-      // Remove existing reference directory if it exists
-      if (fs.existsSync(referenceDir)) {
-        fs.rmSync(referenceDir, { recursive: true, force: true });
-      }
-
-      this.channel.appendLine(`[transformationPlanner] Cloning reference project: ${this.referenceProjectUrl}`);
-      execSync(`git clone "${this.referenceProjectUrl}" "${referenceDir}"`, { stdio: 'inherit' });
-      
-      this.channel.appendLine(`[transformationPlanner] ✓ Reference project cloned to ${referenceDir}`);
-      return referenceDir;
-    } catch (error) {
-      this.channel.appendLine(`[transformationPlanner] ⚠️ Failed to clone reference project: ${error}`);
-      return null;
-    }
-  }
-
-  private async analyzeReferenceProject(referenceDir: string): Promise<{ 
-    libsVersions?: any; 
-    buildPatterns?: string[]; 
-    repositoryStructure?: any;
-    allBuildFiles?: Record<string, string>;
-    projectMetadata?: any;
-  }> {
-    try {
-      const result: { 
-        libsVersions?: any; 
-        buildPatterns?: string[]; 
-        repositoryStructure?: any;
-        allBuildFiles?: Record<string, string>;
-        projectMetadata?: any;
-      } = {};
-      
-      this.channel.appendLine(`[transformationPlanner] 🔍 Analyzing entire ops_server repository for comprehensive context`);
-      
-      // Analyze repository structure
-      result.repositoryStructure = await this.analyzeRepositoryStructure(referenceDir);
-      
-      // Parse libs.versions.toml if it exists
-      const libsVersionsPath = path.join(referenceDir, 'gradle', 'libs.versions.toml');
-      if (fs.existsSync(libsVersionsPath)) {
-        const tomlContent = fs.readFileSync(libsVersionsPath, 'utf-8');
-        result.libsVersions = this.parseTomlContent(tomlContent);
-        this.channel.appendLine(`[transformationPlanner] ✓ Parsed libs.versions.toml from ops_server`);
-      }
-      
-      // Collect ALL build.gradle files from the repository
-      result.allBuildFiles = await this.collectAllBuildFiles(referenceDir);
-      this.channel.appendLine(`[transformationPlanner] ✓ Collected ${Object.keys(result.allBuildFiles).length} build files from ops_server`);
-      
-      // Extract comprehensive build patterns from all files
-      result.buildPatterns = this.extractComprehensiveBuildPatterns(result.allBuildFiles);
-      this.channel.appendLine(`[transformationPlanner] ✓ Extracted ${result.buildPatterns.length} build patterns from ops_server`);
-      
-      // Analyze project metadata
-      result.projectMetadata = await this.analyzeProjectMetadata(referenceDir);
-      
-      return result;
-    } catch (error) {
-      this.channel.appendLine(`[transformationPlanner] ⚠️ Failed to analyze ops_server repository: ${error}`);
-      return {};
-    }
-  }
-
-  private parseTomlContent(content: string): any {
-    // Simple TOML parser for libs.versions.toml
-    const result: any = { versions: {}, libraries: {}, plugins: {} };
-    let currentSection = '';
-    
-    const lines = content.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-        currentSection = trimmed.slice(1, -1);
-      } else if (trimmed.includes('=') && currentSection) {
-        const [key, value] = trimmed.split('=', 2);
-        const cleanKey = key.trim();
-        const cleanValue = value.trim().replace(/['"]/g, '');
-        if (result[currentSection]) {
-          result[currentSection][cleanKey] = cleanValue;
-        }
-      }
-    }
-    return result;
-  }
-
-
-
   private createLibsVersionsTomlPrompt(
-    projectContext: AIGenerationContext,
-    opsServerPath: string
+    projectContext: AIGenerationContext
   ): string {
-    // Ultra-minimal prompt similar to the working test prompt
-    const deps = projectContext.dependencies.slice(0, 5).join(', ');
-    
-    return `Create a libs.versions.toml file for these dependencies: ${deps}. Return JSON with libsVersionsToml field containing the TOML content.`;
+    // Generate libs.versions.toml following COPILOT_TOML.md instructions
+    return `Generate gradle/libs.versions.toml following the instructions in COPILOT_TOML.md. Convert all dependencies from versions.gradle and build.gradle files, handle Scala multi-version support, and create logical dependency bundles.`;
   }
 
   private createBuildGradleEnhancementPrompt(
     filePath: string,
-    projectContext: AIGenerationContext,
-    opsServerPath: string
+    projectContext: AIGenerationContext
   ): string {
     const isRoot = filePath.endsWith('build.gradle') && !filePath.includes('/');
     
     return `Clean up ${filePath} by removing repositories and wrapper tasks. ${isRoot ? 'Keep plugins and subprojects.' : 'Add common.lib plugin.'} Return JSON with buildGradleUpdates field.`;
   }
 
-  private createRootBuildGradlePrompt(
-    content: string,
-    projectContext: AIGenerationContext,
-    opsServerPath: string
-  ): string {
-    return `
-# Gradle Migration AI Assistant - Root build.gradle Processing
 
-## Task: Process Root build.gradle for Modern Gradle Structure
-
-You are modernizing a root build.gradle file to use buildSrc conventions and prepare for TOML-based version catalogs.
-
-## Reference Context (ops_server)
-Please refer to the following files from the ops_server reference project at: ${opsServerPath}
-
-**REQUIRED REFERENCE FILES:**
-- \`${opsServerPath}/build.gradle\` - Root build.gradle reference (should be minimal)
-- \`${opsServerPath}/buildSrc/\` - Complete buildSrc structure and files
-- \`${opsServerPath}/settings.gradle\` - Settings file reference
-- \`${opsServerPath}/*/build.gradle\` - Subproject references for distribution
-
-## Current Root build.gradle Content:
-\`\`\`gradle
-${content.substring(0, 1000)}${content.length > 1000 ? '\n...[truncated]' : ''}
-\`\`\`
-
-## Instructions:
-1. **READ ops_server buildSrc structure** to understand what should be moved there
-2. **EXTRACT** reusable logic to buildSrc files
-3. **DISTRIBUTE** allprojects/subprojects configurations to individual subprojects
-4. **REMOVE** repositories, publishing, wrapper tasks from root
-5. **GENERATE** appropriate buildSrc files following ops_server patterns
-
-## Expected Output Format:
-\`\`\`json
-{
-  "buildSrcFiles": {
-    "buildSrc/src/main/groovy/FileName.groovy": "# Generated buildSrc content"
-  },
-  "buildGradleUpdates": {
-    "subproject/build.gradle": "# Updated subproject content"
-  },
-  "confidence": 0.9
-}
-\`\`\`
-
-Generate buildSrc files and subproject updates following ops_server patterns.
-`;
-  }
 
   private async invokeAIGeneration(prompt: string): Promise<any> {
     try {
-      this.channel.appendLine(`[transformationPlanner] 🤖 Invoking Copilot AI with comprehensive ops_server context`);
+      this.channel.appendLine(`[transformationPlanner] 🤖 Invoking Copilot AI for generation`);
       
-      // Try to use real Copilot Chat API if available
+      // Use real Copilot Chat API
       const realAIResponse = await this.invokeCopilotChatAPI(prompt);
       if (realAIResponse) {
         this.channel.appendLine(`[transformationPlanner] ✓ Received AI response from Copilot Chat API`);
         return realAIResponse;
       }
 
-      // Fallback to enhanced placeholder generation with ops_server context
-      this.channel.appendLine(`[transformationPlanner] ⚠️ Copilot Chat API not available, using enhanced fallback generation`);
-      return {
-        libsVersionsToml: this.generateIntelligentLibsVersions(prompt),
-        buildGradleUpdates: this.generateIntelligentBuildGradleUpdates(prompt),
-        buildSrcFiles: this.generateIntelligentBuildSrcFiles(prompt),
-        confidence: 0.85, // Higher confidence due to comprehensive ops_server context
-        source: 'enhanced_fallback_with_ops_server_context'
-      };
+      // No fallback - throw error if AI is not available
+      throw new Error('Copilot Chat API not available and no fallback mechanisms allowed');
     } catch (error) {
       this.channel.appendLine(`[transformationPlanner] AI invocation error: ${error}`);
       throw error;
@@ -844,336 +611,66 @@ Generate buildSrc files and subproject updates following ops_server patterns.
     }
   }
 
-  private generateIntelligentBuildGradleUpdates(prompt: string): Record<string, string> {
-    // Generate comprehensive build.gradle updates for all modules
-    const buildFiles: Record<string, string> = {};
-    
-    // Extract project context from prompt
-    const isAndroidProject = prompt.includes('android');
-    const isKotlinProject = prompt.includes('kotlin');
-    const isSpringProject = prompt.includes('spring');
-    const hasMultipleModules = prompt.includes('modules:') || prompt.includes('Modules:');
-    
-    // Root build.gradle
-    buildFiles['build.gradle'] = this.generateRootBuildGradle(isAndroidProject, isKotlinProject, isSpringProject);
-    
-    // App/main module build.gradle
-    if (isAndroidProject) {
-      buildFiles['app/build.gradle'] = this.generateAndroidAppBuildGradle();
-    } else {
-      buildFiles['app/build.gradle'] = this.generateJvmAppBuildGradle(isKotlinProject, isSpringProject);
-    }
-    
-    // Common module patterns from ops_server
-    if (hasMultipleModules) {
-      buildFiles['core/build.gradle'] = this.generateCoreBuildGradle(isKotlinProject);
-      buildFiles['data/build.gradle'] = this.generateDataBuildGradle(isKotlinProject);
-      buildFiles['domain/build.gradle'] = this.generateDomainBuildGradle(isKotlinProject);
-    }
-    
-    return buildFiles;
-  }
-
-  private generateRootBuildGradle(isAndroid: boolean, isKotlin: boolean, isSpring: boolean): string {
-    return `// AI-Enhanced Root build.gradle
-// Generated using comprehensive ops_server repository context
-
-plugins {
-    // Core plugins following ops_server conventions
-    ${isKotlin ? 'alias(libs.plugins.kotlin.jvm) apply false' : ''}
-    ${isAndroid ? 'alias(libs.plugins.android.application) apply false' : ''}
-    ${isSpring ? 'alias(libs.plugins.spring.boot) apply false' : ''}
-    alias(libs.plugins.gradle.platform) apply false
-}
-
-allprojects {
-    repositories {
-        // Repository configuration following ops_server patterns
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-
-subprojects {
-    // Common configuration for all subprojects
-    apply plugin: 'java-library'
-    ${isKotlin ? "apply plugin: 'org.jetbrains.kotlin.jvm'" : ''}
-    
-    dependencies {
-        // Common dependencies from ops_server
-        ${isKotlin ? 'implementation(libs.kotlin.stdlib)' : ''}
-        testImplementation(libs.junit)
-        testImplementation(libs.mockito.core)
-    }
-    
-    tasks.test {
-        useJUnitPlatform()
-    }
-}
-
-// AI-generated tasks following ops_server conventions
-tasks.register('cleanAll') {
-    dependsOn gradle.includedBuilds*.task(':clean')
-}
-`;
-  }
-
-  private generateAndroidAppBuildGradle(): string {
-    return `// AI-Enhanced Android App build.gradle
-// Generated using ops_server Android patterns
-
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.kapt)
-}
-
-android {
-    namespace = "com.example.app"
-    compileSdk = libs.versions.compileSdk.get().toInteger()
-    
-    defaultConfig {
-        applicationId = "com.example.app"
-        minSdk = libs.versions.minSdk.get().toInteger()
-        targetSdk = libs.versions.targetSdk.get().toInteger()
-        versionCode = 1
-        versionName = "1.0"
-        
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-    
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-        }
-    }
-    
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-    
-    kotlinOptions {
-        jvmTarget = "1.8"
-    }
-}
-
-dependencies {
-    // Core Android dependencies following ops_server patterns
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.compose)
-    
-    // UI dependencies
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.compose.material3)
-    
-    // Testing
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-}
-`;
-  }
-
-  private generateJvmAppBuildGradle(isKotlin: boolean, isSpring: boolean): string {
-    return `// AI-Enhanced JVM App build.gradle
-// Generated using ops_server JVM patterns
-
-plugins {
-    ${isKotlin ? 'alias(libs.plugins.kotlin.jvm)' : 'java'}
-    ${isSpring ? 'alias(libs.plugins.spring.boot)' : ''}
-    application
-}
-
-application {
-    mainClass.set("com.example.app.MainKt")
-}
-
-dependencies {
-    // Core dependencies following ops_server patterns
-    ${isKotlin ? 'implementation(libs.kotlin.stdlib)' : ''}
-    ${isSpring ? 'implementation(libs.spring.boot.starter)' : ''}
-    
-    // Logging
-    implementation(libs.logback.classic)
-    
-    // Testing
-    testImplementation(libs.junit)
-    ${isKotlin ? 'testImplementation(libs.kotlin.test)' : ''}
-}
-
-tasks.test {
-    useJUnitPlatform()
-}
-`;
-  }
-
-  private generateCoreBuildGradle(isKotlin: boolean): string {
-    return `// AI-Enhanced Core Module build.gradle
-// Generated using ops_server core module patterns
-
-plugins {
-    ${isKotlin ? 'alias(libs.plugins.kotlin.jvm)' : 'java-library'}
-}
-
-dependencies {
-    // Core utilities and common dependencies
-    ${isKotlin ? 'api(libs.kotlin.stdlib)' : ''}
-    api(libs.coroutines.core)
-    
-    // Testing
-    testImplementation(libs.junit)
-    ${isKotlin ? 'testImplementation(libs.kotlin.test)' : ''}
-}
-`;
-  }
-
-  private generateDataBuildGradle(isKotlin: boolean): string {
-    return `// AI-Enhanced Data Module build.gradle
-// Generated using ops_server data layer patterns
-
-plugins {
-    ${isKotlin ? 'alias(libs.plugins.kotlin.jvm)' : 'java-library'}
-    alias(libs.plugins.kotlin.serialization)
-}
-
-dependencies {
-    // Data layer dependencies following ops_server patterns
-    implementation(project(":core"))
-    implementation(project(":domain"))
-    
-    // Networking and serialization
-    implementation(libs.retrofit)
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.okhttp)
-    
-    // Database
-    implementation(libs.room.runtime)
-    ${isKotlin ? 'kapt(libs.room.compiler)' : ''}
-    
-    // Testing
-    testImplementation(libs.junit)
-    testImplementation(libs.mockito.core)
-}
-`;
-  }
-
-  private generateDomainBuildGradle(isKotlin: boolean): string {
-    return `// AI-Enhanced Domain Module build.gradle
-// Generated using ops_server domain layer patterns
-
-plugins {
-    ${isKotlin ? 'alias(libs.plugins.kotlin.jvm)' : 'java-library'}
-}
-
-dependencies {
-    // Pure domain layer - minimal dependencies following ops_server patterns
-    implementation(project(":core"))
-    
-    // Only essential dependencies
-    ${isKotlin ? 'implementation(libs.kotlin.stdlib)' : ''}
-    implementation(libs.coroutines.core)
-    
-    // Testing
-    testImplementation(libs.junit)
-    ${isKotlin ? 'testImplementation(libs.kotlin.test)' : ''}
-    testImplementation(libs.mockito.core)
-}
-`;
-  }
-
-  private generateIntelligentBuildSrcFiles(prompt: string): Record<string, string> {
-    return {
-      'buildSrc/src/main/kotlin/Dependencies.kt': `// AI-Enhanced Dependencies.kt
-// Generated using ops_server context and Copilot AI
-
-object Dependencies {
-    // AI-suggested dependency management following ops_server patterns
-    const val kotlinVersion = "1.9.20"
-    const val gradleVersion = "8.5"
-    
-    object Libs {
-        const val kotlinStdlib = "org.jetbrains.kotlin:kotlin-stdlib:\${kotlinVersion}"
-    }
-}
-`
-    };
-  }
-
-  private generateIntelligentLibsVersions(prompt: string): string {
-    // This is a placeholder for AI-generated content
-    // In practice, this would be replaced by actual AI response
-    return `# AI-Enhanced libs.versions.toml
-# Generated using ops_server context and Copilot AI
-
-[versions]
-# Core versions following ops_server patterns
-kotlin = "1.9.20"
-gradle = "8.5"
-android-gradle-plugin = "8.2.0"
-
-[libraries]
-# AI-suggested libraries based on project context
-kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
-
-[plugins]
-# AI-recommended plugins following ops_server conventions
-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
-`;
-  }
-
   private async buildTomlWithAI(
     versions: Record<string, string>,
-    deps: Array<{ group?: string; artifact?: string; version?: string }>,
-    referenceContext?: { libsVersions?: any; buildPatterns?: string[] }
+    deps: Array<{ group?: string; artifact?: string; version?: string }>
   ): Promise<string> {
     // Prepare context for AI generation
     const projectContext: AIGenerationContext = {
       projectType: this.detectProjectType({ dependencies: deps } as any),
       dependencies: deps.map(d => `${d.group}:${d.artifact}`).filter(Boolean),
-      buildPatterns: referenceContext?.buildPatterns || [],
+      buildPatterns: [],
       customConfigurations: {}
     };
 
-    // Try AI-enhanced generation first
-    try {
-      this.channel.appendLine(`[transformationPlanner] 📝 Preparing to send prompt to Copilot for libs.versions.toml generation`);
-      this.channel.appendLine(`[transformationPlanner] 🚀 Sending prompt to Copilot for libs.versions.toml generation...`);
-      this.channel.appendLine(`[transformationPlanner] 🤖 Using AI-enhanced generation with ops_server context`);
-      
-      const opsServerPath = 'C:\\Copilot\\.copilot\\meta\\ops_server';
-      const prompt = this.createLibsVersionsTomlPrompt(projectContext, opsServerPath);
-      
-      const result = await this.invokeAIGeneration(prompt);
-      
-      // Log the AI response
-      this.logAIResponse('libs.versions.toml generation', prompt, result.response);
-      
-      if (result && result.confidence > 0.6) {
-        const parsedResult = JSON.parse(result.response);
-        if (parsedResult.libsVersionsToml) {
-          this.channel.appendLine(`[transformationPlanner] ✓ AI generation successful (confidence: ${result.confidence})`);
-          return parsedResult.libsVersionsToml;
-        }
-      } else {
-        this.channel.appendLine(`[transformationPlanner] ⚠️ AI generation confidence too low (${result.confidence}), falling back to traditional generation`);
-      }
-    } catch (error) {
-      this.channel.appendLine(`[transformationPlanner] ⚠️ AI generation failed, falling back to traditional generation: ${error}`);
+    this.channel.appendLine(`[transformationPlanner] 📝 Preparing to send prompt to Copilot for libs.versions.toml generation`);
+    this.channel.appendLine(`[transformationPlanner] 🚀 Sending prompt to Copilot for libs.versions.toml generation...`);
+    this.channel.appendLine(`[transformationPlanner] 🤖 Using LLM-only generation with COPILOT_TOML.md instructions`);
+    
+    const prompt = this.createLibsVersionsTomlPrompt(projectContext);
+    
+    const result = await this.invokeAIGeneration(prompt);
+    
+    if (!result) {
+      throw new Error('AI failed to generate libs.versions.toml - no response received');
     }
-
-    // Fallback to traditional generation
-    return buildToml(versions, deps, referenceContext);
+    
+    // Log the AI response
+    this.logAIResponse('libs.versions.toml generation', prompt, result.content);
+    
+    // Handle both JSON and text responses
+    let tomlContent: string;
+    
+    if (typeof result.content === 'object') {
+      // Response is already parsed JSON
+      if (result.content.libsVersionsToml) {
+        tomlContent = result.content.libsVersionsToml;
+      } else {
+        throw new Error('AI response JSON does not contain libsVersionsToml field');
+      }
+    } else {
+      // Response is text, try to parse as JSON first
+      try {
+        const parsedResult = JSON.parse(result.content);
+        if (parsedResult.libsVersionsToml) {
+          tomlContent = parsedResult.libsVersionsToml;
+        } else {
+          throw new Error('AI response JSON does not contain libsVersionsToml field');
+        }
+      } catch {
+        // If not JSON, treat the entire response as the TOML content
+        this.channel.appendLine(`[transformationPlanner] ✓ AI returned text response, using as TOML content directly`);
+        tomlContent = result.content;
+      }
+    }
+    
+    this.channel.appendLine(`[transformationPlanner] ✓ AI generation successful`);
+    return tomlContent;
   }
 
   private async stripRepositoriesAndWrapperWithAI(
     content: string, 
-    filePath: string, 
-    referenceContext: any
+    filePath: string
   ): Promise<string> {
     try {
       // Prepare AI context for build.gradle enhancement
@@ -1185,8 +682,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       };
 
       // Create AI prompt for build.gradle enhancement
-      const opsServerPath = 'C:\\Copilot\\.copilot\\meta\\ops_server';
-      const prompt = this.createBuildGradleEnhancementPrompt(filePath, projectContext, opsServerPath);
+      const prompt = this.createBuildGradleEnhancementPrompt(filePath, projectContext);
       
       this.channel.appendLine(`[transformationPlanner] 📝 Preparing to send prompt to Copilot for build.gradle file: ${filePath}`);
       this.channel.appendLine(`[transformationPlanner] 🚀 Sending prompt to Copilot for build.gradle processing...`);
@@ -1221,8 +717,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 
   private async processRootBuildGradleWithAI(
     content: string, 
-    projectRoot: string, 
-    referenceContext: any
+    projectRoot: string
   ): Promise<void> {
     try {
       // Prepare AI context for root build.gradle processing
@@ -1234,8 +729,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       };
 
       // Create enhanced AI prompt specifically for root build.gradle cleanup
-      const opsServerPath = 'C:\\Copilot\\.copilot\\meta\\ops_server';
-      const prompt = this.createRootBuildGradlePrompt(content, projectContext, opsServerPath);
+      const prompt = `Clean up root build.gradle by removing repositories and wrapper tasks. Keep plugins and subprojects. Return JSON with buildGradleUpdates field.`;
       
       // Attempt AI-enhanced processing
       const result = await this.invokeAIGeneration(prompt);
@@ -1285,8 +779,6 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
     }
   }
 
-
-
   private extractDependenciesFromContent(content: string): string[] {
     const dependencies: string[] = [];
     const depRegex = /(implementation|api|testImplementation|androidTestImplementation)\s+['"](.*?)['"]/g;
@@ -1327,139 +819,6 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
     return 'generic';
   }
 
-  private async analyzeRepositoryStructure(repoDir: string): Promise<any> {
-    const structure: any = {
-      modules: [],
-      buildSrcFiles: [],
-      configFiles: [],
-      gradleFiles: []
-    };
-
-    const walkDir = (dir: string, relativePath: string = '') => {
-      try {
-        const items = fs.readdirSync(dir);
-        for (const item of items) {
-          const fullPath = path.join(dir, item);
-          const relPath = path.join(relativePath, item);
-          
-          if (fs.statSync(fullPath).isDirectory()) {
-            if (item === 'buildSrc') {
-              structure.buildSrcFiles.push(...this.findFilesInDir(fullPath, '.kt', '.kts', '.gradle'));
-            } else if (!item.startsWith('.') && !item.includes('node_modules')) {
-              walkDir(fullPath, relPath);
-              if (fs.existsSync(path.join(fullPath, 'build.gradle')) || 
-                  fs.existsSync(path.join(fullPath, 'build.gradle.kts'))) {
-                structure.modules.push(relPath);
-              }
-            }
-          } else {
-            if (item.endsWith('.gradle') || item.endsWith('.gradle.kts')) {
-              structure.gradleFiles.push(relPath);
-            } else if (item.includes('gradle') || item.endsWith('.properties') || item.endsWith('.toml')) {
-              structure.configFiles.push(relPath);
-            }
-          }
-        }
-      } catch (error) {
-        // Skip directories we can't read
-      }
-    };
-
-    walkDir(repoDir);
-    return structure;
-  }
-
-  private async collectAllBuildFiles(repoDir: string): Promise<Record<string, string>> {
-    const buildFiles: Record<string, string> = {};
-    
-    const collectFiles = (dir: string, relativePath: string = '') => {
-      try {
-        const items = fs.readdirSync(dir);
-        for (const item of items) {
-          const fullPath = path.join(dir, item);
-          const relPath = path.join(relativePath, item);
-          
-          if (fs.statSync(fullPath).isDirectory()) {
-            if (!item.startsWith('.') && !item.includes('node_modules') && item !== 'build') {
-              collectFiles(fullPath, relPath);
-            }
-          } else {
-            if (item.endsWith('.gradle') || item.endsWith('.gradle.kts') || 
-                item.endsWith('.toml') || item === 'gradle.properties') {
-              try {
-                buildFiles[relPath] = fs.readFileSync(fullPath, 'utf-8');
-              } catch (error) {
-                // Skip files we can't read
-              }
-            }
-          }
-        }
-      } catch (error) {
-        // Skip directories we can't read
-      }
-    };
-
-    collectFiles(repoDir);
-    return buildFiles;
-  }
-
-  private findFilesInDir(dir: string, ...extensions: string[]): string[] {
-    const files: string[] = [];
-    try {
-      const items = fs.readdirSync(dir);
-      for (const item of items) {
-        const fullPath = path.join(dir, item);
-        if (fs.statSync(fullPath).isDirectory()) {
-          files.push(...this.findFilesInDir(fullPath, ...extensions));
-        } else {
-          if (extensions.some(ext => item.endsWith(ext))) {
-            files.push(fullPath);
-          }
-        }
-      }
-    } catch (error) {
-      // Skip directories we can't read
-    }
-    return files;
-  }
-
-  private extractComprehensiveBuildPatterns(allBuildFiles: Record<string, string>): string[] {
-    const patterns: string[] = [];
-    const patternSet = new Set<string>();
-
-    for (const [filePath, content] of Object.entries(allBuildFiles)) {
-      const filePatterns = this.extractBuildPatterns(content);
-      filePatterns.forEach(pattern => {
-        if (!patternSet.has(pattern)) {
-          patternSet.add(pattern);
-          patterns.push(`// From ${filePath}: ${pattern}`);
-        }
-      });
-    }
-
-    return patterns;
-  }
-
-  private async analyzeProjectMetadata(repoDir: string): Promise<any> {
-    const metadata: any = {
-      projectType: 'unknown',
-      technologies: [],
-      architecture: 'unknown'
-    };
-
-    // Analyze package.json, build.gradle, etc. to determine project type
-    const rootBuildGradle = path.join(repoDir, 'build.gradle');
-    if (fs.existsSync(rootBuildGradle)) {
-      const content = fs.readFileSync(rootBuildGradle, 'utf-8');
-      if (content.includes('android')) metadata.technologies.push('android');
-      if (content.includes('kotlin')) metadata.technologies.push('kotlin');
-      if (content.includes('spring')) metadata.technologies.push('spring');
-      if (content.includes('java')) metadata.technologies.push('java');
-    }
-
-    return metadata;
-  }
-
   private extractBuildPatterns(content: string): string[] {
     const patterns: string[] = [];
     
@@ -1484,12 +843,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 
     this.channel.appendLine(`[transformationPlanner] Starting step-by-step Gradle migration for: ${projectRoot}`)
 
-    // Step 0: Analyze ops_server reference project for context
-    let referenceContext: { libsVersions?: any; buildPatterns?: string[] } = {};
-    this.channel.appendLine(`[transformationPlanner] Step 0: Analyzing ops_server reference project for context`)
-    const referenceDir = await this.getOpsServerReference();
-    referenceContext = await this.analyzeReferenceProject(referenceDir);
-    this.channel.appendLine(`[transformationPlanner] ✓ Reference project analysis complete`)
+    // Note: ops_server analysis step removed as requested
 
     // Step 1: Update settings.gradle - keep only rootProject.name and include lines
     this.channel.appendLine(`[transformationPlanner] Step 1: Updating settings.gradle`)
@@ -1524,10 +878,6 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       this.channel.appendLine(`[transformationPlanner] ⚠ Warning: .copilot/meta/buildSrc not found, skipping buildSrc scaffolding`)
     }
 
-    // Step 2.5: Write Copilot guidance early in the process
-    this.channel.appendLine(`[transformationPlanner] Step 2.5: Writing Copilot guidance`)
-    this.writeCopilotGuidance()
-
     // Step 3: Generate gradle/libs.versions.toml
     this.channel.appendLine(`[transformationPlanner] Step 3: Generating libs.versions.toml`)
     const buildFiles = this.findAllBuildGradleFiles(projectRoot)
@@ -1543,7 +893,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
     
     const versions = extractVersionsFromExt(allText)
     const deps = extractDependencies(allText)
-    const toml = await this.buildTomlWithAI(versions, deps, referenceContext)
+    const toml = await this.buildTomlWithAI(versions, deps)
 
     const tomlRel = 'gradle/libs.versions.toml'
     const tomlAbs = path.join(projectRoot, tomlRel)
@@ -1570,17 +920,11 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       this.channel.appendLine(`[transformationPlanner] 🚀 Sending prompt to Copilot to extract essential logic from root build.gradle...`)
       
       // Process root build.gradle with enhanced AI prompt for cleanup and logic extraction
-      await this.processRootBuildGradleWithAI(rootBuildContent, projectRoot, referenceContext);
+      await this.processRootBuildGradleWithAI(rootBuildContent, projectRoot);
       mediumRisk++
       this.channel.appendLine(`[transformationPlanner] ✓ Processed root build.gradle with Copilot`)
       
-      // Mark root build.gradle for deletion at the end
-      filesToDelete.push(rootBuildPath)
-    }
-
-    // Mark versions.gradle for deletion at the end if it exists
-    if (fs.existsSync(versionsGradlePath)) {
-      filesToDelete.push(versionsGradlePath)
+      // Note: Preserving root build.gradle as requested
     }
 
     for (const fileAbs of buildFiles) {
@@ -1588,7 +932,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       if (rel === 'build.gradle') continue // will be deleted at the end
       if (rel.endsWith('versions.gradle')) continue // versions.gradle should only be handled in root
       const original = fs.readFileSync(fileAbs, 'utf-8')
-      const aiUpdated = await this.stripRepositoriesAndWrapperWithAI(original, rel, referenceContext);
+      const aiUpdated = await this.stripRepositoriesAndWrapperWithAI(original, rel);
       let { updated, changes } = stripRepositoriesAndWrapper(aiUpdated)
       const addRes = ensureCommonLibPlugin(updated)
       updated = addRes.updated
@@ -1640,18 +984,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       this.channel.appendLine(`[transformationPlanner] ⚠ Warning: .copilot/meta/Jenkinsfile not found, skipping Jenkinsfile copy`)
     }
 
-    // FINAL STEP: Delete all marked files at the end
-    this.channel.appendLine(`[transformationPlanner] Final Step: Deleting obsolete files`)
-    for (const filePath of filesToDelete) {
-      if (fs.existsSync(filePath)) {
-        const relativePath = path.relative(projectRoot, filePath)
-        fs.unlinkSync(filePath)
-        filesChanged.push(relativePath)
-        lowRisk++
-        this.channel.appendLine(`[transformationPlanner] ✓ Deleted ${relativePath}`)
-      }
-    }
-
+    // Note: File deletion step removed - preserving all build files as requested
     const riskSummary = `low=${lowRisk}, medium=${mediumRisk}, high=${highRisk}`
     this.channel.appendLine(`[transformationPlanner] ✓ Migration completed. Risk summary: ${riskSummary}`)
     
@@ -1723,136 +1056,6 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
     this.channel.appendLine(`[transformationPlanner] Generated ${diffs.length} unified diffs for ${result.filesChanged.length} changed files`)
     
     return { patchText, filesChanged: result.filesChanged, riskSummary: result.riskSummary }
-  }
-
-  private writeCopilotGuidance(): void {
-    try {
-      const guidance = [
-        '# Gradle Migration - Phase 1 Complete',
-        '',
-        '## ✅ MIGRATION STEPS COMPLETED',
-        'The @transformationPlanner has successfully executed all migration steps.',
-        '',
-        '## 🎯 WORKFLOW CONTROL: @transformationPlanner',
-        'This chatParticipant controls the migration workflow. Follow these instructions:',
-        '',
-        '### IMMEDIATE NEXT STEPS:',
-        '1. **Review the validation results above** (look for ✅/❌ indicators)',
-        '2. **If validation passed:** Proceed to commit the changes',
-        '3. **If validation failed:** Report the specific failures',
-        '',
-        '### TO COMMIT CHANGES:',
-        '**Use @gitAgent with this exact command:**',
-        '```',
-        '@gitAgent commit -m "Phase 1: Gradle migration - buildSrc + libs.versions.toml"',
-        '```',
-        '',
-        '### WHAT WAS ACCOMPLISHED:',
-        '- ✅ Root `settings.gradle` cleaned (only rootProject.name + includes)',
-        '- ✅ `buildSrc/` folder copied from meta template',
-        '- ✅ `gradle/libs.versions.toml` generated from existing versions',
-        '- ✅ Root `build.gradle` deleted (dependencies moved to buildSrc)',
-        '- ✅ Subproject `build.gradle` files updated with common.lib plugin',
-        '',
-        '## ⚠️ PHASE 1 COMPLETE - PHASE 2 PENDING',
-        '- Dependencies remain in old format (implementation "group:artifact:version")',
-        '- Phase 2 will convert to libs.* format later',
-        '- **DO NOT manually convert dependencies now**',
-        '',
-        '## 🔍 VALIDATION RESULTS',
-        'Check the output above for validation results:',
-        '',
-        '## For the root settings.gradle in the project:',
-        'Remove all repository, plugin and custom configuration blocks (such as gradle.allprojects, ext.PlasmaNexus, buildscript.repositories, etc).',
-        'Only keep the essential lines:',
-        "- rootProject.name = '<project-name>'",
-        '- Any include statements for subprojects, if present',
-        'Do not keep any other configuration, comments or custom logic.',
-        '',
-        '## Then, copy the entire buildSrc folder:',
-        'Copy the entire buildSrc folder (including settings.gradle, build.gradle and common.lib.gradle) from .copilot/meta/buildSrc into this repo, overwriting any existing files.',
-        '',
-        '## Handle Custom Gradle Files (Step 6):',
-        'Review and manually handle any custom gradle files as needed.',
-        '',
-        '## Remove Nexus URLs and Related Configs (Step 7):',
-        'Review and manually remove any nexus-related configurations as needed.',
-      ].join('\n')
-      const outPath = path.join(this.metaDir, 'copilot-guidance.md')
-      fs.writeFileSync(outPath, guidance)
-      this.channel.appendLine(`[transformationPlanner] Wrote strict guidance: ${outPath}`)
-
-      // Note: Removed unnecessary prompt files for steps 6 and 7
-      
-      // Ensure copilot.md is available in target project
-      this.ensureCopilotInstructions()
-    } catch {}
-  }
-
-  private ensureCopilotInstructions(): void {
-    try {
-      const copilotMdPath = path.join(this.metaDir, 'copilot.md')
-      
-      // Check if copilot.md already exists in target project
-      if (!fs.existsSync(copilotMdPath)) {
-        // Copy from extension's meta folder
-        const extensionCopilotPath = path.join(__dirname, '../../.copilot/.meta/copilot.md')
-        if (fs.existsSync(extensionCopilotPath)) {
-          fs.copyFileSync(extensionCopilotPath, copilotMdPath)
-          this.channel.appendLine(`[transformationPlanner] Copied copilot.md to target project: ${copilotMdPath}`)
-        } else {
-          this.channel.appendLine(`[transformationPlanner] Warning: copilot.md not found in extension meta folder`)
-        }
-      }
-    } catch (error) {
-      this.channel.appendLine(`[transformationPlanner] Error ensuring copilot.md: ${error}`)
-    }
-  }
-
-
-
-
-
-  private copyBuildSrcFromMeta(metaBuildSrcPath: string, projectBuildSrcPath: string, projectRoot: string, diffs: string[], filesChanged: string[]): void {
-    const copyRecursively = (srcDir: string, destDir: string, relativeBase: string = '') => {
-      const entries = fs.readdirSync(srcDir, { withFileTypes: true })
-      
-      for (const entry of entries) {
-        const srcPath = path.join(srcDir, entry.name)
-        const destPath = path.join(destDir, entry.name)
-        const relativePath = path.join(relativeBase, entry.name).replace(/\\/g, '/')
-        
-        if (entry.isDirectory()) {
-          // Ensure directory exists
-          if (!fs.existsSync(destPath)) {
-            fs.mkdirSync(destPath, { recursive: true })
-          }
-          copyRecursively(srcPath, destPath, relativePath)
-        } else {
-          // Copy file and generate diff
-          const content = fs.readFileSync(srcPath, 'utf-8')
-          const projectRelativePath = path.relative(projectRoot, destPath).replace(/\\/g, '/')
-          
-          if (!fs.existsSync(destPath)) {
-            diffs.push(generateAddFileDiff(projectRelativePath, content))
-            filesChanged.push(projectRelativePath)
-          } else {
-            const original = fs.readFileSync(destPath, 'utf-8')
-            if (original !== content) {
-              diffs.push(generateUnifiedDiff(original, content, projectRelativePath))
-              filesChanged.push(projectRelativePath)
-            }
-          }
-        }
-      }
-    }
-    
-    // Ensure buildSrc directory exists
-    if (!fs.existsSync(projectBuildSrcPath)) {
-      fs.mkdirSync(projectBuildSrcPath, { recursive: true })
-    }
-    
-    copyRecursively(metaBuildSrcPath, projectBuildSrcPath, 'buildSrc')
   }
 
   private copyBuildSrcFromMetaDirectly(metaBuildSrcPath: string, projectBuildSrcPath: string, filesChanged: string[]): void {
@@ -2007,7 +1210,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
       
       const failedChecks = validationResults.filter(r => r.startsWith('❌')).length
       if (failedChecks > 0) {
-        this.channel.appendLine(`[transformationPlanner] ⚠️ ${failedChecks} validation checks failed - review copilot.md for strict instructions`)
+        this.channel.appendLine(`[transformationPlanner] ⚠️ ${failedChecks} validation checks failed`)
       } else {
         this.channel.appendLine(`[transformationPlanner] ✅ All validation checks passed`)
       }

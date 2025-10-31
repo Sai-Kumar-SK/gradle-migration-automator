@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="1400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 24px; font-weight: bold; fill: #2c3e50; }
+      .step-box { fill: #3498db; stroke: #2980b9; stroke-width: 2; rx: 8; }
+      .step-text { font-family: Arial, sans-serif; font-size: 14px; fill: white; font-weight: bold; }
+      .step-detail { font-family: Arial, sans-serif; font-size: 12px; fill: white; }
+      .ai-box { fill: #9b59b6; stroke: #8e44ad; stroke-width: 2; rx: 8; }
+      .ai-text { font-family: Arial, sans-serif; font-size: 14px; fill: white; font-weight: bold; }
+      .ai-detail { font-family: Arial, sans-serif; font-size: 12px; fill: white; }
+      .decision-box { fill: #e74c3c; stroke: #c0392b; stroke-width: 2; }
+      .decision-text { font-family: Arial, sans-serif; font-size: 12px; fill: white; font-weight: bold; }
+      .process-box { fill: #27ae60; stroke: #229954; stroke-width: 2; rx: 8; }
+      .process-text { font-family: Arial, sans-serif; font-size: 12px; fill: white; font-weight: bold; }
+      .preserve-box { fill: #f39c12; stroke: #e67e22; stroke-width: 2; rx: 8; }
+      .preserve-text { font-family: Arial, sans-serif; font-size: 12px; fill: white; font-weight: bold; }
+      .error-box { fill: #e74c3c; stroke: #c0392b; stroke-width: 2; rx: 8; }
+      .error-text { font-family: Arial, sans-serif; font-size: 12px; fill: white; font-weight: bold; }
+      .arrow { stroke: #34495e; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .ai-arrow { stroke: #9b59b6; stroke-width: 3; fill: none; marker-end: url(#ai-arrowhead); }
+      .error-arrow { stroke: #e74c3c; stroke-width: 2; fill: none; marker-end: url(#error-arrowhead); stroke-dasharray: 5,5; }
+      .risk-low { fill: #2ecc71; }
+      .risk-medium { fill: #f39c12; }
+      .risk-high { fill: #e74c3c; }
+      .risk-text { font-family: Arial, sans-serif; font-size: 10px; fill: white; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#34495e" />
+    </marker>
+    <marker id="ai-arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9b59b6" />
+    </marker>
+    <marker id="error-arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#e74c3c" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="600" y="30" text-anchor="middle" class="title">Gradle Migration Flow with LLM Integration</text>
+  
+  <!-- Start -->
+  <rect x="525" y="60" width="150" height="40" class="step-box"/>
+  <text x="600" y="85" text-anchor="middle" class="step-text">START MIGRATION</text>
+  
+  <!-- Step 1: Settings.gradle (Non-AI) -->
+  <rect x="450" y="140" width="300" height="80" class="step-box"/>
+  <text x="600" y="165" text-anchor="middle" class="step-text">Step 1: Update settings.gradle</text>
+  <text x="600" y="185" text-anchor="middle" class="step-detail">• Keep only rootProject.name</text>
+  <text x="600" y="200" text-anchor="middle" class="step-detail">• Keep include lines</text>
+  <text x="600" y="215" text-anchor="middle" class="step-detail">• Remove other blocks (NON-AI)</text>
+  
+  <!-- Risk indicator for Step 1 -->
+  <circle cx="780" cy="180" r="15" class="risk-low"/>
+  <text x="780" y="185" text-anchor="middle" class="risk-text">LOW</text>
+  
+  <!-- Step 2: BuildSrc (Non-AI) -->
+  <rect x="450" y="260" width="300" height="80" class="step-box"/>
+  <text x="600" y="285" text-anchor="middle" class="step-text">Step 2: Copy buildSrc Structure</text>
+  <text x="600" y="305" text-anchor="middle" class="step-detail">• Copy from .copilot/meta/buildSrc</text>
+  <text x="600" y="320" text-anchor="middle" class="step-detail">• Direct file copy (NON-AI)</text>
+  <text x="600" y="335" text-anchor="middle" class="step-detail">• Include common.lib.gradle</text>
+  
+  <!-- Risk indicator for Step 2 -->
+  <circle cx="780" cy="300" r="15" class="risk-low"/>
+  <text x="780" y="305" text-anchor="middle" class="risk-text">LOW</text>
+  
+  <!-- Step 3: Version Catalog with AI -->
+  <rect x="450" y="380" width="300" height="100" class="ai-box"/>
+  <text x="600" y="405" text-anchor="middle" class="ai-text">Step 3: Generate Version Catalog (AI)</text>
+  <text x="600" y="425" text-anchor="middle" class="ai-detail">• Scan ALL build.gradle files</text>
+  <text x="600" y="440" text-anchor="middle" class="ai-detail">• Extract dependencies with LLM</text>
+  <text x="600" y="455" text-anchor="middle" class="ai-detail">• Generate libs.versions.toml</text>
+  <text x="600" y="470" text-anchor="middle" class="ai-detail">AI: Uses Copilot Chat API</text>
+  
+  <!-- Risk indicator for Step 3 -->
+  <circle cx="780" cy="430" r="15" class="risk-medium"/>
+  <text x="780" y="435" text-anchor="middle" class="risk-text">MED</text>
+  
+  <!-- AI Failure Decision Point -->
+  <polygon points="600,520 680,550 600,580 520,550" class="decision-box"/>
+  <text x="600" y="555" text-anchor="middle" class="decision-text">AI Available?</text>
+  <text x="600" y="570" text-anchor="middle" class="decision-text">LLM Working?</text>
+  
+  <!-- AI Failure Path -->
+  <rect x="850" y="500" width="280" height="80" class="error-box"/>
+  <text x="990" y="525" text-anchor="middle" class="error-text">AI FAILURE - MIGRATION STOPS</text>
+  <text x="990" y="545" text-anchor="middle" class="step-detail">• No fallback for TOML generation</text>
+  <text x="990" y="560" text-anchor="middle" class="step-detail">• Error: "AI failed to generate"</text>
+  <text x="990" y="575" text-anchor="middle" class="step-detail">• Manual intervention required</text>
+  
+  <!-- Step 4: Gradle Wrapper (Non-AI) -->
+  <rect x="450" y="620" width="300" height="80" class="step-box"/>
+  <text x="600" y="645" text-anchor="middle" class="step-text">Step 4: Update Gradle Wrapper</text>
+  <text x="600" y="665" text-anchor="middle" class="step-detail">• Copy from meta folder</text>
+  <text x="600" y="680" text-anchor="middle" class="step-detail">• Direct file copy (NON-AI)</text>
+  <text x="600" y="695" text-anchor="middle" class="step-detail">• Version preservation</text>
+  
+  <!-- Risk indicator for Step 4 -->
+  <circle cx="780" cy="660" r="15" class="risk-low"/>
+  <text x="780" y="665" text-anchor="middle" class="risk-text">LOW</text>
+  
+  <!-- Step 5: Root Build.gradle with AI -->
+  <rect x="450" y="740" width="300" height="100" class="ai-box"/>
+  <text x="600" y="765" text-anchor="middle" class="ai-text">Step 5: Process Root Build.gradle (AI)</text>
+  <text x="600" y="785" text-anchor="middle" class="ai-detail">• Extract essential logic with LLM</text>
+  <text x="600" y="800" text-anchor="middle" class="ai-detail">• Analyze for preservation</text>
+  <text x="600" y="815" text-anchor="middle" class="ai-detail">• Generate recommendations</text>
+  <text x="600" y="830" text-anchor="middle" class="ai-detail">AI: Uses Copilot Chat API</text>
+  
+  <!-- Risk indicator for Step 5 -->
+  <circle cx="780" cy="790" r="15" class="risk-medium"/>
+  <text x="780" y="795" text-anchor="middle" class="risk-text">MED</text>
+  
+  <!-- AI Failure Decision Point 2 -->
+  <polygon points="600,880 680,910 600,940 520,910" class="decision-box"/>
+  <text x="600" y="915" text-anchor="middle" class="decision-text">AI Processing</text>
+  <text x="600" y="930" text-anchor="middle" class="decision-text">Successful?</text>
+  
+  <!-- AI Failure Fallback -->
+  <rect x="850" y="860" width="280" height="80" class="preserve-box"/>
+  <text x="990" y="885" text-anchor="middle" class="preserve-text">FALLBACK: Preserve Original</text>
+  <text x="990" y="905" text-anchor="middle" class="step-detail">• Keep original build.gradle</text>
+  <text x="990" y="920" text-anchor="middle" class="step-detail">• Log AI failure</text>
+  <text x="990" y="935" text-anchor="middle" class="step-detail">• Continue migration</text>
+  
+  <!-- Step 6: Subproject Processing with AI -->
+  <rect x="100" y="980" width="300" height="120" class="ai-box"/>
+  <text x="250" y="1005" text-anchor="middle" class="ai-text">Step 6: Update Subprojects (AI)</text>
+  <text x="250" y="1025" text-anchor="middle" class="ai-detail">• Strip repositories with LLM</text>
+  <text x="250" y="1040" text-anchor="middle" class="ai-detail">• Apply plugins { id 'common.lib' }</text>
+  <text x="250" y="1055" text-anchor="middle" class="ai-detail">• Remove publishing blocks</text>
+  <text x="250" y="1070" text-anchor="middle" class="ai-detail">• Keep dependency declarations</text>
+  <text x="250" y="1085" text-anchor="middle" class="ai-detail">AI: Uses Copilot Chat API</text>
+  
+  <!-- Validation -->
+  <rect x="500" y="980" width="300" height="120" class="process-box"/>
+  <text x="650" y="1005" text-anchor="middle" class="process-text">Step 7: Validation &amp; Risk Summary</text>
+  <text x="650" y="1025" text-anchor="middle" class="step-detail">• Validate buildSrc structure</text>
+  <text x="650" y="1040" text-anchor="middle" class="step-detail">• Check libs.versions.toml</text>
+  <text x="650" y="1055" text-anchor="middle" class="step-detail">• Count risk levels (NON-AI)</text>
+  <text x="650" y="1070" text-anchor="middle" class="step-detail">• Generate compliance report</text>
+  <text x="650" y="1085" text-anchor="middle" class="step-detail">• Log summary</text>
+  
+  <!-- Completion -->
+  <rect x="525" y="1140" width="150" height="60" class="process-box"/>
+  <text x="600" y="1165" text-anchor="middle" class="process-text">MIGRATION</text>
+  <text x="600" y="1180" text-anchor="middle" class="process-text">COMPLETED</text>
+  
+  <!-- Return Results -->
+  <rect x="450" y="1240" width="300" height="60" class="step-box"/>
+  <text x="600" y="1265" text-anchor="middle" class="step-text">Return Migration Results</text>
+  <text x="600" y="1285" text-anchor="middle" class="step-detail">• Files changed list • Risk summary</text>
+  
+  <!-- Main Flow Arrows -->
+  <line x1="600" y1="100" x2="600" y2="140" class="arrow"/>
+  <line x1="600" y1="220" x2="600" y2="260" class="arrow"/>
+  <line x1="600" y1="340" x2="600" y2="380" class="arrow"/>
+  <line x1="600" y1="480" x2="600" y2="520" class="ai-arrow"/>
+  
+  <!-- AI Success/Failure arrows for Step 3 -->
+  <line x1="680" y1="550" x2="850" y2="540" class="error-arrow"/>
+  <text x="750" y="535" class="decision-text">NO/FAIL</text>
+  
+  <line x1="600" y1="580" x2="600" y2="620" class="arrow"/>
+  <text x="620" y="605" class="decision-text">YES</text>
+  
+  <line x1="600" y1="700" x2="600" y2="740" class="arrow"/>
+  <line x1="600" y1="840" x2="600" y2="880" class="ai-arrow"/>
+  
+  <!-- AI Success/Failure arrows for Step 5 -->
+  <line x1="680" y1="910" x2="850" y2="900" class="error-arrow"/>
+  <text x="750" y="895" class="decision-text">FAIL</text>
+  
+  <line x1="600" y1="940" x2="600" y2="980" class="arrow"/>
+  <text x="620" y="965" class="decision-text">SUCCESS</text>
+  
+  <!-- Convergence from fallback -->
+  <line x1="990" y1="940" x2="600" y2="980" class="arrow"/>
+  
+  <!-- Subproject processing arrows -->
+  <line x1="520" y1="910" x2="250" y2="980" class="arrow"/>
+  <text x="370" y="940" class="decision-text">HAS SUBPROJECTS</text>
+  
+  <!-- Convergence arrows -->
+  <line x1="250" y1="1100" x2="600" y2="1140" class="arrow"/>
+  <line x1="650" y1="1100" x2="600" y2="1140" class="arrow"/>
+  
+  <!-- Final arrows -->
+  <line x1="600" y1="1200" x2="600" y2="1240" class="arrow"/>
+  
+  <!-- Legend -->
+  <rect x="50" y="1320" width="1100" height="70" fill="#ecf0f1" stroke="#bdc3c7" stroke-width="1" rx="5"/>
+  <text x="600" y="1340" text-anchor="middle" class="title" style="font-size: 16px;">Legend</text>
+  
+  <rect x="80" y="1350" width="15" height="15" class="step-box"/>
+  <text x="105" y="1362" class="step-detail" style="fill: #2c3e50;">Non-AI Step</text>
+  
+  <rect x="200" y="1350" width="15" height="15" class="ai-box"/>
+  <text x="225" y="1362" class="step-detail" style="fill: #2c3e50;">AI-Powered</text>
+  
+  <rect x="320" y="1350" width="15" height="15" class="error-box"/>
+  <text x="345" y="1362" class="step-detail" style="fill: #2c3e50;">AI Failure</text>
+  
+  <rect x="440" y="1350" width="15" height="15" class="preserve-box"/>
+  <text x="465" y="1362" class="step-detail" style="fill: #2c3e50;">Fallback/Preserve</text>
+  
+  <rect x="580" y="1350" width="15" height="15" class="process-box"/>
+  <text x="605" y="1362" class="step-detail" style="fill: #2c3e50;">Process Step</text>
+  
+  <polygon points="720,1350 735,1357 720,1365 715,1357" class="decision-box"/>
+  <text x="745" y="1362" class="step-detail" style="fill: #2c3e50;">Decision Point</text>
+  
+  <circle cx="850" cy="1357" r="8" class="risk-low"/>
+  <text x="870" y="1362" class="step-detail" style="fill: #2c3e50;">Low Risk</text>
+  
+  <circle cx="950" cy="1357" r="8" class="risk-medium"/>
+  <text x="970" y="1362" class="step-detail" style="fill: #2c3e50;">Med Risk</text>
+  
+  <circle cx="1050" cy="1357" r="8" class="risk-high"/>
+  <text x="1070" y="1362" class="step-detail" style="fill: #2c3e50;">High Risk</text>
+</svg>

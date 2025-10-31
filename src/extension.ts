@@ -218,11 +218,7 @@ export async function activate(context: vscode.ExtensionContext) {
       // If we're already in a cloned repo, metaDir was set correctly above
       fs.mkdirSync(metaDir, { recursive: true });
 
-      // Check for required reference project (ops_server)
-      const opsServerPath = path.join(metaDir, 'ops_server');
-      if (!fs.existsSync(opsServerPath)) {
-        throw new Error('Reference project "ops_server" not found in .copilot/meta/ folder. Please ensure the ops_server reference project is available.');
-      }
+      // Note: ops_server dependency removed as requested
 
       // Initialize participants (dependency injection style)
       const gitAgent = new GitAgent(channel, metaDir);

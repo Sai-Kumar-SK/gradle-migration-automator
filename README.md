@@ -11,13 +11,27 @@ Automates migration of Gradle projects from Nexus OSS to JFrog Artifactory lever
   - `transformationPlanner`: generate unified diff patches to replace Nexus configs with Artifactory equivalents
 - Intermediate artifacts stored in `.copilot/meta`
 - Progress via notifications and Output Channel
-- Uses VS Code’s terminal for Gradle task execution (manual by user)
+- Uses VS Code's terminal for Gradle task execution (manual by user)
+
+## Migration Flow
+
+The migration process follows a structured 5-step approach that preserves existing build files while modernizing the Gradle configuration:
+
+![Migration Flow](./migration-flow-chart.svg)
+
+**Key Steps:**
+1. **Settings.gradle Update** - Simplify to essential project structure
+2. **BuildSrc Creation** - Add modern build conventions
+3. **Version Catalog Generation** - Centralize dependency management
+4. **File Preservation** - Keep existing build.gradle and versions.gradle files
+5. **Subproject Updates** - Apply modern plugin conventions
+
+For detailed step-by-step documentation, see [PROMPT.md](./PROMPT.md).
 
 ## Requirements
 - Git installed and available in PATH
 - VS Code 1.93+ (Chat Participants API)
 - GitHub Copilot extension (for AI-enhanced generation)
-- **ops_server reference project**: Must be available in `.copilot/meta/ops_server/` folder for migration context
 
 ## Workspace Handling
 The extension intelligently handles different workspace scenarios:

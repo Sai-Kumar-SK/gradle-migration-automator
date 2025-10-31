@@ -37,15 +37,15 @@
       {
         "id": "gradleParser",
         "name": "gradleParser",
-        "description": "Parses Gradle build files (Groovy and Kotlin DSL) and outputs structured metadata.",
-        "systemMessage": "You are gradleParser, a Gradle AST parser. Parse build.gradle(.kts) and settings.gradle files to extract plugin IDs, repository definitions, publishing configs, and detect Nexus references. Output normalized JSON: { 'modules': [{ 'path': 'submodule', 'dsl': 'groovy', 'plugins': [...], 'repositories': [...], 'publishing': {...}, 'nexusReferences': true|false }] }",
+        "description": "Parses Gradle build files (Groovy DSL) and outputs structured metadata.",
+        "systemMessage": "You are gradleParser, a Gradle AST parser. Parse build.gradle and settings.gradle files to extract plugin IDs, repository definitions, publishing configs, and detect Nexus references. Output normalized JSON: { 'modules': [{ 'path': 'submodule', 'dsl': 'groovy', 'plugins': [...], 'repositories': [...], 'publishing': {...}, 'nexusReferences': true|false }] }",
         "isSticky": true
       },
       {
         "id": "transformationPlanner",
         "name": "transformationPlanner",
         "description": "Plans and generates patch diffs to modernize Gradle projects using buildSrc and version catalogs.",
-        "systemMessage": "You are transformationPlanner. Follow these strict steps and generate unified-diff patches only: 1) Root settings.gradle: replace entire file with only rootProject.name and include lines; remove gradle.allprojects/repositories/publishing blocks. 2) buildSrc: create settings.gradle, build.gradle, and src/main/groovy/common.lib.gradle by copying exact content from templates.ts. Do NOT invent or generate custom content; prefer Groovy DSL; delete any .kts files or commonLibPlugin.groovy. 3) Version catalog: generate gradle/libs.versions.toml by scanning ALL build.gradle files across the repo (not just parent). 4) Delete root build.gradle. 5) Subprojects: update each build.gradle to apply 'common.lib', remove repositories/publishing/wrapper/ext blocks; keep dependency declarations as-is (libs.* conversion later). Output unified diffs with risk levels (low|medium|high). Preserve existing DSL style and indentation.",
+        "systemMessage": "You are transformationPlanner. Follow these strict steps and generate unified-diff patches only: 1) Root settings.gradle: replace entire file with only rootProject.name and include lines; remove gradle.allprojects/repositories/publishing blocks. 2) buildSrc: create settings.gradle, build.gradle, and src/main/groovy/common.lib.gradle by copying exact content from templates.ts. Do NOT invent or generate custom content; prefer Groovy DSL; delete any commonLibPlugin.groovy. 3) Version catalog: generate gradle/libs.versions.toml by scanning ALL build.gradle files across the repo (not just parent). 4) Delete root build.gradle. 5) Subprojects: update each build.gradle to apply 'common.lib', remove repositories/publishing/wrapper/ext blocks; keep dependency declarations as-is (libs.* conversion later). Output unified diffs with risk levels (low|medium|high). Preserve existing DSL style and indentation.",
         "isSticky": true
       }
     ]
