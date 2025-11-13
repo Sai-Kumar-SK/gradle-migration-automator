@@ -1,0 +1,151 @@
+package com.example
+
+import org.gradle.api.DefaultTask
+import org.gradle.api.tasks.TaskAction
+import org.gradle.api.artifacts.ExternalModuleDependency
+
+class GenerateLibsTomlTask extends DefaultTask {
+    @TaskAction
+    void generate() {
+        def allDependencies = [:] // Map of "group:artifact" -> version
+        def versionKeys = [:]      // version -> ext key name (not used for keys)
+
+        // Extract ext properties for versions (kept for awareness; we key by artifact name)
+        if (project.rootProject.ext.has("properties")) {
+            project.rootProject.ext.properties.each { k, v ->
+                if (v instanceof String && v ==~ /\d+\.\d+\.\d+.*/) {
+                    versionKeys[v] = k
+                }
+            }
+        }
+
+        // Collect declared dependencies from all configurations (including non-resolvable)
+        project.rootProject.allprojects.each { subproject ->
+            // Standard project configurations
+            subproject.configurations.each { config ->
+                config.allDependencies.withType(ExternalModuleDependency).each { dep ->
+                    def key = "${dep.group}:${dep.name}"
+                    if (!allDependencies.containsKey(key)) {
+                        allDependencies[key] = dep.version
+                    }
+                }
+            }
+
+            // Also consider buildscript classpath dependencies
+            if (subproject.hasProperty('buildscript') && subproject.buildscript?.configurations) {
+                subproject.buildscript.configurations.each { bconfig ->
+                    bconfig.allDependencies.withType(ExternalModuleDependency).each { dep ->
+                        def key = "${dep.group}:${dep.name}"
+                        if (!allDependencies.containsKey(key)) {
+                            allDependencies[key] = dep.version
+                        }
+                    }
+                }
+            }
+        }
+
+        // Use resolution results to fill in versions when they are managed by platforms/BOMs
+        def resolvedVersions = [:] // Map of "group:artifact" -> resolved version
+        project.rootProject.allprojects.each { subproject ->
+            subproject.configurations.each { config ->
+                if (config.canBeResolved) {
+                    try {
+                        config.resolvedConfiguration.firstLevelModuleDependencies.each { res ->
+                            def rkey = "${res.moduleGroup}:${res.moduleName}"
+                            // last one wins; typically consistent across configurations
+                            resolvedVersions[rkey] = res.moduleVersion
+                        }
+                    } catch (Exception ignored) {
+                        // Some configurations may fail resolution; skip
+                    }
+                }
+            }
+        }
+
+        // Apply resolved versions where explicit versions were absent
+        allDependencies.keySet().each { gav ->
+            if (!allDependencies[gav] && resolvedVersions[gav]) {
+                allDependencies[gav] = resolvedVersions[gav]
+            }
+        }
+
+        def versionMap = [:]
+
+        // Create unique version keys keyed by artifact name
+        def nameFor = { String gav -> gav.split(":" )[1] }
+        def usedKeys = [:] // alias -> module
+        allDependencies.each { gav, ver ->
+            if (!ver) return // still no version available
+            def baseKey = generateVersionKey(gav)
+            def vkey = baseKey
+            int i = 2
+            while (versionMap.containsKey(vkey) && usedKeys[vkey] != gav) {
+                vkey = "${baseKey}${i}"
+                i++
+            }
+            versionMap[vkey] = ver
+            usedKeys[vkey] = gav
+        }
+
+        def libsMap = [:]
+        def seenAliases = [:] // alias -> module
+        allDependencies.each { gav, ver ->
+            if (!ver) return
+            def (group, name) = gav.split(":")
+            def alias = generateAlias(group, name)
+            // Ensure alias uniqueness for libraries
+            if (seenAliases.containsKey(alias) && seenAliases[alias] != "$group:$name") {
+                int i = 2
+                def newAlias = alias
+                while (seenAliases.containsKey(newAlias) && seenAliases[newAlias] != "$group:$name") {
+                    newAlias = "${alias}${i}"
+                    i++
+                }
+                alias = newAlias
+            }
+            seenAliases[alias] = "$group:$name"
+
+            // version.ref equals the alias key used in versions
+            def versionRef = alias
+            // If alias not present in versions (due to collision renaming), try matching by module
+            if (!versionMap.containsKey(versionRef)) {
+                // Find the key that maps to this module
+                def matchedKey = versionMap.find { k, v -> usedKeys[k] == gav }?.key
+                versionRef = matchedKey ?: versionRef
+            }
+
+            if (versionMap.containsKey(versionRef)) {
+                libsMap[alias] = [module: "$group:$name", versionRef: versionRef]
+            }
+        }
+
+        def outputDir = new File(project.rootProject.projectDir, "gradle")
+        outputDir.mkdirs()
+        def outputFile = new File(outputDir, "libs.versions.toml")
+
+        outputFile.withWriter { w ->
+            w.writeLine("[versions]")
+            versionMap.each { k, v ->
+                w.writeLine("${k} = \"${v}\"")
+            }
+            w.writeLine("\n[libraries]")
+            libsMap.each { alias, lib ->
+                w.writeLine("${alias} = { module = \"${lib.module}\", version.ref = \"${lib.versionRef}\" }")
+            }
+        }
+
+        println "Generated libs.versions.toml with ${libsMap.size()} libraries."
+    }
+
+    static String generateAlias(String group, String name) {
+        return name.replaceAll(/[^a-zA-Z0-9]/, "").toLowerCase()
+    }
+
+    static String generateVersionKey(String gav) {
+        def (_, name) = gav.split(":")
+        return "${name.replaceAll(/[^a-zA-Z0-9]/, "").toLowerCase()}"
+    }
+}
+
+// Register the task so it can be invoked as `gradle generateLibsToml`
+tasks.register('generateLibsToml', GenerateLibsTomlTask)
